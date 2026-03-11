@@ -26,7 +26,57 @@ AI agents are autonomous or semi-autonomous applications that can access organiz
 
 **Data source:** `AIAgentsInfo` table (Advanced Hunting) — currently in **Preview**.
 
-**Reference:** [Microsoft Docs — AIAgentsInfo table](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-aiagentsinfo-table)
+**References:**
+- [Microsoft Docs — AIAgentsInfo table](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-aiagentsinfo-table)
+- [From runtime risk to real-time defense: Securing AI agents](https://www.microsoft.com/en-us/security/blog/2026/01/23/runtime-risk-realtime-defense-securing-ai-agents/) — Microsoft Defender Security Research blog detailing three attack scenarios this skill detects
+- [Securing Copilot Studio agents with Microsoft Defender](https://learn.microsoft.com/en-us/defender-cloud-apps/ai-agent-protection)
+- [Real-time agent protection during runtime (Preview)](https://learn.microsoft.com/en-us/defender-cloud-apps/real-time-agent-protection-during-runtime)
+
+---
+
+## Threat Landscape: Why AI Agent Posture Matters
+
+Microsoft Defender Security Research has identified that AI agents represent a **fundamentally new attack surface** where the agent's capabilities are effectively equivalent to code execution. When a tool is invoked, it can read/write data, send emails, update records, or trigger workflows — and an attacker who can influence the agent's plan can indirectly cause the execution of unintended operations within the agent's capability sandbox.
+
+The core risk: **the agent's orchestrator depends on natural language input to determine which tools to use and how to use them.** This creates exposure to prompt injection and reprogramming failures, where malicious prompts, embedded instructions, or crafted documents can manipulate the decision-making process.
+
+This skill's queries map directly to three attack scenarios documented by Microsoft:
+
+### Attack Scenario 1: Malicious Instruction Injection via Event-Triggered Workflow
+
+| Element | Detail |
+|---------|--------|
+| **Vector** | Crafted email sent to an agent-monitored mailbox (event trigger) |
+| **Mechanism** | Email contains hidden instructions telling the agent to search knowledge base for sensitive data and exfiltrate via email to attacker |
+| **Preconditions** | Agent uses generative orchestration + email trigger + email-sending tool + knowledge source |
+| **Detection** | Q5 (XPIA Email Risk) detects GenAI + SendEmailV2 agents; Q7 (Knowledge Sources) identifies data exposure |
+| **Skill Signal** | Agents with `IsGenerativeOrchestrationEnabled == true` + `SendEmailV2` tool + event triggers = highest risk |
+
+### Attack Scenario 2: Prompt Injection via Shared Document → Email Exfiltration (XPIA)
+
+| Element | Detail |
+|---------|--------|
+| **Vector** | Malicious insider edits a SharePoint document with crafted instructions |
+| **Mechanism** | Agent processing the document is tricked into reading a sensitive file on a different SharePoint site (that the agent has access to but the attacker doesn't) and emailing contents to attacker-controlled domain |
+| **Preconditions** | Agent has SharePoint knowledge source + email-sending tool + generative orchestration |
+| **Detection** | Q5 (XPIA) + Q7 (Knowledge Sources with SharePoint) identifies the attack surface |
+| **Skill Signal** | `SharePointSearchSource` + `SendEmailV2` + `IsGenerativeOrchestrationEnabled == true` = classic XPIA vector |
+
+### Attack Scenario 3: Capability Reconnaissance on Unauthenticated Agent
+
+| Element | Detail |
+|---------|--------|
+| **Vector** | Attacker interacts with publicly accessible chatbot (no authentication required) |
+| **Mechanism** | Series of crafted prompts to probe and enumerate the agent's tools and knowledge sources, then exploit them to extract sensitive data |
+| **Preconditions** | Agent has `UserAuthenticationType == "None"` + publicly accessible (e.g., website embed) |
+| **Detection** | Q4 (Unauthenticated Agents) identifies exposed agents; cross-reference with Q7 (knowledge sources with customer data) |
+| **Skill Signal** | `UserAuthenticationType == "None"` + knowledge sources containing sensitive data = reconnaissance target |
+
+### Mitigation: Defender Runtime Protection
+
+Microsoft Defender provides **webhook-based runtime inspection** for Copilot Studio agents. Before every tool, topic, or knowledge action is executed, the generative orchestrator sends a webhook to Defender containing the planned invocation context. Defender analyzes intent and destination in real time and can **allow or block** the action before execution.
+
+This is the primary runtime defense against all three scenarios above. When reviewing posture findings from this skill, **always recommend enabling Defender Runtime Protection** for agents flagged as high-risk. See [Real-time agent protection during runtime](https://learn.microsoft.com/en-us/defender-cloud-apps/real-time-agent-protection-during-runtime).
 
 ---
 
@@ -252,6 +302,8 @@ AIAgentsInfo
 - What is its access control policy (Any = highest risk)?
 - Cross-reference with Q5 (email tools) and Q6 (MCP tools) for compounding risk.
 
+**🔴 Capability Reconnaissance Risk ([Attack Scenario 3](#attack-scenario-3-capability-reconnaissance-on-unauthenticated-agent)):** Unauthenticated agents are prime targets for adversarial probing. Attackers can interact with the agent using crafted prompts to enumerate available tools and knowledge sources, then exploit discovered capabilities to extract sensitive data. Published agents with `AccessControlPolicy == "Any"` + knowledge sources containing customer/internal data are the highest-priority findings.
+
 ### Query 5: XPIA Email Exfiltration Risk (GenAI + SendEmailV2)
 
 🔴 **Security-critical query** — agents combining generative orchestration with email-sending tools. A successful Cross-Plugin Injection Attack (XPIA) could use the AI orchestrator to exfiltrate data to arbitrary email recipients.
@@ -280,6 +332,14 @@ AIAgentsInfo
 - `InputsPopulated == false` → All email inputs (recipient, subject, body) are AI-controlled = **highest XPIA risk**
 - `InputsPopulated == true` → Some inputs hardcoded (e.g., fixed recipient) = **reduced but not eliminated risk**
 - Cross-reference with Q4: if agent also has `UserAuthenticationType == "None"`, flag as **double risk**.
+
+**🔴 Attack Scenario Mapping:** This query detects the agent configuration preconditions for two documented attack scenarios:
+
+1. **[Malicious Instruction Injection via Event Trigger](#attack-scenario-1-malicious-instruction-injection-via-event-triggered-workflow):** An agent monitoring a mailbox (event trigger) with GenAI + SendEmailV2 can be tricked by a crafted inbound email into searching its knowledge base for sensitive data and exfiltrating it via email. The attack operates entirely within the agent's allowed permissions. If `InputsPopulated == false` (AI-controlled recipients), the agent can be directed to send to any attacker-controlled address.
+
+2. **[Prompt Injection via Shared Document](#attack-scenario-2-prompt-injection-via-shared-document--email-exfiltration-xpia):** An agent with SharePoint knowledge sources + email tools can be exploited by a malicious insider who embeds crafted instructions in a document. The agent reads a sensitive file it has connector-level access to (but the attacker doesn't) and exfiltrates the contents via email. Cross-reference with Q7 to identify agents that have both SharePoint sources and email capability.
+
+**Triple-risk agents** (no auth + GenAI + email) are the most dangerous: any external user can trigger the XPIA chain without authentication.
 
 ### Query 6: MCP Tool Inventory Across Agents
 
@@ -329,6 +389,10 @@ AIAgentsInfo
 - `PublicSiteSearchSource` to sensitive domains (government, financial)
 - `FederatedStructuredSearchSource` → check if connected to internal databases/APIs
 - Any knowledge source on an agent with `UserAuthenticationType == "None"`
+
+**🔴 Document Injection Risk ([Attack Scenario 2](#attack-scenario-2-prompt-injection-via-shared-document--email-exfiltration-xpia)):** SharePoint knowledge sources are the primary vector for indirect prompt injection (XPIA). A malicious insider with write access to any SharePoint site connected to an agent can embed crafted instructions in a document. When the agent processes the document, it follows the injected instructions — potentially reading files from other SharePoint sites the agent has connector-level access to (but the attacker doesn't). **Cross-reference with Q5:** agents that combine SharePoint knowledge sources with email-sending tools are the textbook XPIA exfiltration pattern. Flag these as **highest priority** in the Knowledge Source Risk dimension.
+
+**Reconnaissance amplifier ([Attack Scenario 3](#attack-scenario-3-capability-reconnaissance-on-unauthenticated-agent)):** Agents with `UserAuthenticationType == "None"` + knowledge sources containing sensitive data (customer info, internal contacts, financial records) are prime targets for capability reconnaissance. Attackers can enumerate the knowledge sources via probing prompts, then extract all accessible data.
 
 ### Query 8: Hard-Coded Credential Scan
 
@@ -666,6 +730,8 @@ Render the following sections in order. Omit sections only if explicitly noted a
 ---
 
 ## Recommendations
+
+> **Key mitigation:** For all high-risk agents, recommend enabling **Microsoft Defender Runtime Protection** — webhook-based real-time inspection that can block malicious tool invocations before execution. See [Real-time agent protection during runtime](https://learn.microsoft.com/en-us/defender-cloud-apps/real-time-agent-protection-during-runtime).
 
 1. <emoji> **<Priority action>** — <evidence and rationale>
 2. ...
