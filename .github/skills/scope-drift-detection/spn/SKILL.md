@@ -647,6 +647,13 @@ Render a single markdown table summarizing all queries executed. **Do NOT includ
 **Problem:** Newly provisioned SPNs have no baseline to compare against.
 **Solution:** These are excluded from the `join kind=inner` and will not appear in results. If the user asks about a specific SPN with no baseline, report: "No baseline data available — SPN was provisioned within the recent window or has no sign-in history in the 90-day baseline period."
 
+### Sentinel IDs vs Defender XDR IDs for Triage MCP Drill-Down
+**Problem:** Query 4 returns `IncidentNumber` (Sentinel) and `SystemAlertId` (Sentinel), but the Triage MCP tools (`GetIncidentById`, `GetAlertById`) expect Defender XDR IDs. Passing Sentinel IDs returns "not found" errors.
+**Solution:** When following up on correlated alerts/incidents via Triage MCP:
+- **Incidents:** Always project `ProviderIncidentId` from `SecurityIncident` and pass **that** to `GetIncidentById` — never use `IncidentNumber`
+- **Alerts:** Extract the Defender ID from `SecurityAlert`: `tostring(parse_json(ExtendedProperties).IncidentId)` — never use `SystemAlertId` with the Triage MCP
+- See the global [Sentinel ↔ Defender XDR ID Mapping](../../../copilot-instructions.md#-sentinel--defender-xdr-id-mapping--global-rule) rule in copilot-instructions.md
+
 ---
 
 ## Error Handling
@@ -674,3 +681,4 @@ Before presenting results, verify:
 - [ ] Incident classifications (TP/FP/BP) were factored into risk assessment — FalsePositive alerts discounted, TruePositive alerts escalated
 - [ ] IPv6 `fd00:` addresses were identified as Microsoft fabric (not adversary infrastructure)
 - [ ] Credential rotation cadence was assessed for AuditLog findings
+- [ ] When drilling into incidents/alerts via Triage MCP, `ProviderIncidentId` was used (never `IncidentNumber` or `SystemAlertId`)

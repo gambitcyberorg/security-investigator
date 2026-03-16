@@ -145,6 +145,7 @@ Before querying any table for the first time in a session, verify the schema:
 | **Signinlogs_Anomalies_KQL_CL** | Custom `_CL` table names are **case-sensitive**. Table uses lowercase 'l' in "logs" — `Signinlogs` NOT `SigninLogs`. LLMs auto-correct this to match `SigninLogs` | Always copy exact table name `Signinlogs_Anomalies_KQL_CL`. If `SemanticError: Failed to resolve table`, verify casing first. If still fails, table may not exist in the workspace — skip gracefully |
 | **SentinelHealth** | `SentinelResourceType` values use **title-case with a space**: `"Analytics Rule"`, NOT `"Analytic rule"`. LLMs consistently generate the wrong casing/spelling, returning 0 results despite 30k+ rows in the table | Always use `SentinelResourceType == "Analytics Rule"` (capital A, capital R, "Analytics" with an 's'). Other valid values: `"Data connector"`, `"Automation rule"`. If query returns 0 rows, check this filter first |
 | **AADRiskySignIns** | Table does **NOT exist** in Sentinel Data Lake. Querying it returns `SemanticError: Failed to resolve table` | Use `AADUserRiskEvents` instead (contains Identity Protection risk detections). For sign-in-level risk data, use `SigninLogs` with `RiskLevelDuringSignIn` and `RiskState` columns |
+| **SecurityIncident / SecurityAlert** | `IncidentNumber` and `SystemAlertId` are **Sentinel-local IDs** — the Triage MCP (`GetIncidentById`, `GetAlertById`) uses **Defender XDR IDs** and returns "not found" for Sentinel IDs | Use `SecurityIncident.ProviderIncidentId` for Triage MCP incident lookups. For alert drill-down, extract `parse_json(ExtendedProperties).IncidentId` from SecurityAlert. See [Sentinel ↔ Defender XDR ID Mapping](#-sentinel--defender-xdr-id-mapping--global-rule) for full mapping table |
 | **AIAgentsInfo** | **Advanced Hunting only** — does NOT exist in Sentinel Data Lake. Multiple records per agent (state snapshots); `KnowledgeDetails` is a string containing a JSON array of JSON strings; `IsGenerativeOrchestrationEnabled` may be null | Always use `RunAdvancedHuntingQuery`. Deduplicate with `summarize arg_max(Timestamp, *) by AIAgentId`. Double-parse KnowledgeDetails: `mv-expand KnowledgeRaw = parse_json(KnowledgeDetails) \| extend KnowledgeJson = parse_json(tostring(KnowledgeRaw))`. Treat null GenAI flag as unknown. Table is in **Preview** — schema may change |
 
 ### Step 4: Validate Before Execution
@@ -378,7 +379,30 @@ Incident investigation and threat hunting tools for Defender XDR and Sentinel:
 - **When to Use**: Incident triage, threat hunting over your own Defender/Sentinel data, correlating alerts/entities during investigations
 - **Documentation**: https://learn.microsoft.com/en-us/azure/sentinel/datalake/sentinel-mcp-triage-tool
 
-### 🔧 Tool Selection Rule: Data Lake vs Advanced Hunting
+### � Sentinel ↔ Defender XDR ID Mapping — GLOBAL RULE
+
+**The Sentinel Triage MCP (`GetIncidentById`, `GetAlertById`, `ListAlerts`) uses Defender XDR IDs, NOT Sentinel table IDs.** Passing Sentinel IDs to these tools returns "not found" errors.
+
+| Sentinel Table Field | What It Is | Triage MCP Equivalent | How to Map |
+|---------------------|------------|----------------------|------------|
+| `SecurityIncident.IncidentNumber` | Sentinel-assigned sequential number | ❌ **Not accepted** by `GetIncidentById` | Use `SecurityIncident.ProviderIncidentId` instead — this is the Defender XDR incident ID |
+| `SecurityIncident.ProviderIncidentId` | Defender XDR incident ID | ✅ **Pass this** to `GetIncidentById` | Direct — no mapping needed |
+| `SecurityAlert.SystemAlertId` | Sentinel-assigned alert GUID | ❌ **Not accepted** by `GetAlertById` | Extract `IncidentId` from `SecurityAlert.ExtendedProperties` for the Defender XDR ID |
+
+**When you discover incidents/alerts via Sentinel KQL (SecurityIncident, SecurityAlert tables) and need to drill down via Triage MCP:**
+
+1. **For incidents:** Always `project ProviderIncidentId` in your Sentinel query and pass **that** value to `GetIncidentById`
+2. **For alerts:** Extract the Defender ID from `ExtendedProperties`: `tostring(parse_json(ExtendedProperties).IncidentId)` — or query the incident via `ProviderIncidentId` first
+3. **Never pass** `IncidentNumber` or `SystemAlertId` to Triage MCP tools
+
+| Action | Status |
+|--------|--------|
+| Passing `SecurityIncident.IncidentNumber` to `GetIncidentById` | ❌ **PROHIBITED** |
+| Passing `SecurityAlert.SystemAlertId` to `GetAlertById` | ❌ **PROHIBITED** |
+| Using `ProviderIncidentId` from SecurityIncident for Triage MCP calls | ✅ **REQUIRED** |
+| Extracting Defender ID from `ExtendedProperties.IncidentId` for alert drill-down | ✅ **REQUIRED** |
+
+### �🔧 Tool Selection Rule: Data Lake vs Advanced Hunting
 
 **Two KQL execution tools are available. Each has trade-offs:**
 

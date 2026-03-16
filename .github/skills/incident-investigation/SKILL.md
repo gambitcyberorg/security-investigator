@@ -67,6 +67,18 @@ This skill performs comprehensive security investigations on incidents from **Mi
 | GUID format | Sentinel (internal) | Sentinel `query_lake` MCP tool |
 | `INxx-xxxxx` format | Defender XDR | `GetIncidentById` |
 
+**⚠️ Sentinel → Defender XDR ID Mapping (Critical):**
+
+When an incident is discovered via Sentinel KQL (e.g., `SecurityIncident` or `SecurityAlert` tables), its IDs are **Sentinel-local** and will NOT work with the Triage MCP:
+
+| Sentinel Field | Triage MCP Accepts? | Correct Field to Use |
+|---------------|---------------------|---------------------|
+| `SecurityIncident.IncidentNumber` | ❌ Returns "not found" | Use `SecurityIncident.ProviderIncidentId` |
+| `SecurityAlert.SystemAlertId` | ❌ Returns "not found" | Extract `parse_json(ExtendedProperties).IncidentId` |
+| `SecurityIncident.ProviderIncidentId` | ✅ | Pass directly to `GetIncidentById` |
+
+**Rule:** When querying `SecurityIncident` for later Triage MCP drill-down, **always project `ProviderIncidentId`** alongside `IncidentNumber`. Use `ProviderIncidentId` for all `GetIncidentById` calls.
+
 **Date Range Rules:**
 - **Default analysis window:** 7 days before current date to current date (Standard)
 - **Investigation depth options:**
