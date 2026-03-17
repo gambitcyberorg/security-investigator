@@ -1,6 +1,6 @@
 # 🔒 Security Investigation Automation System
 
-**Comprehensive, automated security investigations powered by Microsoft Sentinel, Defender XDR, Graph API, and threat intelligence — with 18 specialized Agent Skills**
+**Comprehensive, automated security investigations powered by Microsoft Sentinel, Defender XDR, Graph API, and threat intelligence — with 19 specialized Agent Skills**
 
 An investigation automation framework that combines **GitHub Copilot**, **VS Code Agent Skills**, and **Model Context Protocol (MCP) servers** to enable natural language security investigations. Ask questions like *"Investigate this user for the last 7 days"* or *"Is this IP malicious?"* and get comprehensive analysis with KQL queries, threat intelligence correlation, and professional reports.
 
@@ -32,7 +32,7 @@ copy .vscode\mcp.json.template .vscode\mcp.json
 
 **For detailed workflows and KQL queries:**
 → [.github/copilot-instructions.md](.github/copilot-instructions.md) (universal patterns, skill detection)
-→ [.github/skills/](.github/skills/) (18 specialized investigation workflows)
+→ [.github/skills/](.github/skills/) (19 specialized investigation workflows)
 → [queries/](queries/) (verified KQL query library)
 
 ---
@@ -47,7 +47,7 @@ copy .vscode\mcp.json.template .vscode\mcp.json
 │            (Skill detection, universal patterns, routing)          │
 ├────────────────────────────────────────────────────────────────────┤
 │                     .github/skills/*.md                            │
-│       (18 specialized workflows with KQL, risk assessment)         │
+│       (19 specialized workflows with KQL, risk assessment)         │
 ├────────────────────────────────────────────────────────────────────┤
 │                     MCP Servers (Platform)                         │
 │  ┌─────────────┐  ┌──────────────┐  ┌───────────────────────────┐  │
@@ -75,7 +75,7 @@ copy .vscode\mcp.json.template .vscode\mcp.json
 ```
 
 **Key Components:**
-- **18 Agent Skills** — Modular investigation workflows for incidents, users, devices, IoCs, authentication, scope drift (SPN/User/Device), MCP monitoring, exposure management, AI agent posture, ingestion analysis, detection authoring, and more
+- **19 Agent Skills** — Modular investigation workflows for incidents, users, devices, IoCs, authentication, scope drift (SPN/User/Device), MCP monitoring, exposure management, AI agent posture, data security analysis, ingestion analysis, detection authoring, and more
 - **7 MCP Server Integrations** — Sentinel Data Lake, Graph API, Defender XDR Triage, KQL Search, Microsoft Learn, Azure MCP Server, Sentinel Graph (private preview)
 - **3 Local MCP Apps** — Interactive heatmaps, geographic attack maps, incident commenting
 - **Python Utilities** — HTML report generation with IP enrichment (geolocation, VPN detection, abuse scores, Shodan port/service/CVE intelligence)
@@ -97,6 +97,7 @@ copy .vscode\mcp.json.template .vscode\mcp.json
 - **Ingestion & Cost Analysis** — Table-level volume breakdown, tier classification, anomaly detection, analytic rule inventory, license benefit analysis, migration candidates
 - **Custom Detection Authoring** — Create, deploy, update, and manage Defender XDR custom detection rules via Graph API with manifest-driven batch deployment
 - **AI Agent Posture Audit** — Agent inventory, authentication gaps, MCP tool proliferation, knowledge source exposure, XPIA risk, Agent Security Score for Copilot Studio and M365 Copilot agents
+- **Data Security Analysis** — Sensitive information type (SIT) access patterns, DLP policy correlation, insider risk triage, EDM monitoring, file-based risk ranking, spike detection across DataSecurityEvents
 - **Visualizations** — Interactive heatmaps and geographic attack maps
 
 ---
@@ -105,7 +106,7 @@ copy .vscode\mcp.json.template .vscode\mcp.json
 
 This system uses **[VS Code Agent Skills](https://code.visualstudio.com/docs/copilot/customization/agent-skills)** to provide modular, domain-specific investigation workflows. Skills are automatically detected based on keywords in your prompts.
 
-### Available Skills (18)
+### Available Skills (19)
 
 | Category | Skill | Description | Trigger Keywords |
 |----------|-------|-------------|------------------|
@@ -121,6 +122,7 @@ This system uses **[VS Code Agent Skills](https://code.visualstudio.com/docs/cop
 | 📈 Behavioral Analysis | **[scope-drift-detection/user](/.github/skills/scope-drift-detection/user/SKILL.md)** | User scope drift: 90-day baseline vs 7-day comparison, dual Drift Scores (7-dim interactive + 6-dim non-interactive), correlated with AuditLogs, SecurityAlert, Identity Protection, CloudAppEvents, EmailEvents | "user drift", "user scope drift", "user behavioral change", "UPN drift" |
 | 🛡️ Posture & Exposure | **[exposure-investigation](/.github/skills/exposure-investigation/SKILL.md)** | Vulnerability & Exposure Management reporting: CVE assessment with exploit/CVSS data, security configuration compliance, end-of-support software, ExposureGraph critical assets, attack paths, Defender health, certificate status | "vulnerability report", "exposure report", "CVE assessment", "security posture", "TVM" |
 | 🛡️ Posture & Exposure | **[ai-agent-posture](/.github/skills/ai-agent-posture/SKILL.md)** | AI agent security posture audit for Copilot Studio and M365 Copilot agents: agent inventory, authentication gaps, access control misconfigurations, MCP tool proliferation, knowledge source exposure, XPIA risk, credential detection, Agent Security Score | "AI agent posture", "agent security audit", "Copilot Studio agents", "agent inventory", "unauthenticated agents", "agent sprawl" |
+| 🔒 Data Security | **[data-security-analysis](/.github/skills/data-security-analysis/SKILL.md)** | DataSecurityEvents (Purview/IRM) analysis: SIT access breakdowns, user risk ranking, file inventory, DLP policy correlation, Copilot SIT exposure, SIT GUID-to-name resolution, anomaly detection. Designed for 100k+ user environments | "data security", "sensitive information type", "SIT access", "DLP events", "DataSecurityEvents", "EDM access", "insider risk activity", "Purview data security" |
 | 📊 Visualization | **[geomap-visualization](/.github/skills/geomap-visualization/SKILL.md)** | Interactive world map visualization for Sentinel data: attack origin maps, geographic threat distribution, IP geolocation with enrichment drill-down | "geomap", "world map", "geographic", "attack map", "attack origins" |
 | 📊 Visualization | **[heatmap-visualization](/.github/skills/heatmap-visualization/SKILL.md)** | Interactive heatmap visualization for Sentinel data: attack patterns by time, activity grids, IP vs hour matrices, threat intel drill-down | "heatmap", "show heatmap", "visualize patterns", "activity grid" |
 | 🔧 Tooling & Monitoring | **[detection-authoring](/.github/skills/detection-authoring/SKILL.md)** | Create, deploy, update, and manage Defender XDR custom detection rules via Graph API. Query adaptation from Sentinel KQL, manifest-driven batch deployment via PowerShell, lifecycle management | "create custom detection", "deploy detection", "detection rule", "custom detection", "deploy rule", "batch deploy" |
@@ -158,6 +160,8 @@ You don't need to mention the skill name — keywords are detected automatically
 | "Deploy these detection rules to Defender XDR" | detection-authoring |
 | "Audit AI agent security posture" | ai-agent-posture |
 | "Show me unauthenticated Copilot Studio agents" | ai-agent-posture |
+| "Who accessed files with credit card numbers?" | data-security-analysis |
+| "Run a data security analysis for the last 30 days" | data-security-analysis |
 
 ### Follow-ups and Chaining
 
@@ -234,11 +238,12 @@ security-investigator/
 ├── requirements.txt             # Python dependencies
 ├── .github/
 │   ├── copilot-instructions.md  # Skill detection, universal patterns, routing
-│   └── skills/                  # 18 Agent Skills (modular investigation workflows)
+│   └── skills/                  # 19 Agent Skills (modular investigation workflows)
 │       ├── ai-agent-posture/
 │       ├── authentication-tracing/
 │       ├── ca-policy-investigation/
 │       ├── computer-investigation/
+│       ├── data-security-analysis/
 │       ├── detection-authoring/
 │       ├── geomap-visualization/
 │       ├── heatmap-visualization/
@@ -270,6 +275,7 @@ security-investigator/
 │   ├── scope-drift/            # Scope drift analysis reports
 │   ├── mcp-usage/              # MCP usage monitoring reports
 │   ├── exposure/               # Exposure management reports
+│   ├── data-security/          # Data security SIT analysis reports
 │   └── ingestion/              # Sentinel ingestion & cost analysis reports
 ├── temp/                        # Investigation JSON files (auto-cleaned after 3 days)
 └── archive/                     # Legacy code and design docs
