@@ -44,14 +44,15 @@ This skill monitors and audits **Model Context Protocol (MCP) server usage** acr
 3. **[Extended MCP Server Landscape](#extended-microsoft-mcp-server-landscape-reference)** - Full Microsoft MCP ecosystem catalog
 4. **[Output Modes](#output-modes)** - Inline chat vs. Markdown file
 5. **[Scalability & Token Management](#scalability--token-management)** - Guidance for large environments
-6. **[Quick Start](#quick-start-tldr)** - 8-step investigation pattern
+6. **[Quick Start](#quick-start-tldr)** - 10-step investigation pattern
 7. **[MCP Usage Score Formula](#mcp-usage-score-formula)** - Composite health & risk scoring
-8. **[Execution Workflow](#execution-workflow)** - Complete 6-phase process
+8. **[Execution Workflow](#execution-workflow)** - Complete 7-phase process
 9. **[Sample KQL Queries](#sample-kql-queries)** - Validated query patterns
 10. **[Report Template](#report-template)** - Output format specification
 11. **[Proactive Alerting — KQL Data Lake Jobs](#proactive-alerting--kql-data-lake-jobs)** - Scheduled anomaly detection
 12. **[Known Pitfalls](#known-pitfalls)** - Edge cases and false positives
 13. **[Error Handling](#error-handling)** - Troubleshooting guide
+14. **[SVG Dashboard Generation](#svg-dashboard-generation)** - Visual dashboard from completed report
 
 ---
 
@@ -168,8 +169,8 @@ IF UserId is populated AND ServicePrincipalId is empty:
 
 When running MCP usage monitoring:
 
-1. **Phase 1 (Graph MCP):** Check BOTH `UserId` and `ServicePrincipalId` in Query 1 results — if `ServicePrincipalId` is populated with a non-empty value, an SPN or Agent Identity is calling Graph MCP autonomously
-2. **New Phase (Agent Detection):** Run Query 17 to identify Agent Identities in the tenant and cross-reference against MCP callers
+1. **Phase 6 (Agent Detection):** Check BOTH `UserId` and `ServicePrincipalId` in Query 9 results — if `ServicePrincipalId` is populated with a non-empty value, an SPN or Agent Identity is calling Graph MCP autonomously
+2. **Phase 6 (Agent Detection):** Run Query 9 to identify Agent Identities in the tenant and cross-reference against MCP callers
 3. **Report section:** Include a dedicated "Agent vs User Attribution" breakdown showing how many MCP calls originated from humans, standard SPNs, and Agent Identities
 4. **Security flag:** Agent Identities calling sensitive Graph endpoints autonomously (without user OBO context) should be flagged 🟠 — verify authorization
 
@@ -211,7 +212,7 @@ When running MCP usage monitoring:
 | `80ccca67-54bd-44ab-8625-4b79c4dc7775` | M365 Security & Compliance Center (Sentinel Portal) | `LAQueryLogs` | `ASI_Portal`, `ASI_Portal_Connectors` — Sentinel Portal backend, NOT an MCP server |
 | `95a5d94c-a1a0-40eb-ac6d-48c5bdee96d5` | Azure Portal — AppInsightsPortalExtension | `LAQueryLogs` | Azure Portal blade for Log Analytics Usage dashboards/workbooks. `RequestClientApp` = `AppInsightsPortalExtension`. Executes billing/usage queries (e.g., `Usage \| where IsBillable`). NOT MCP, NOT VS Code — runs when user opens Workspace Usage Dashboard in browser. No SPN or app registration in tenant (platform-level first-party app). Not in merill/microsoft-info known apps list. |
 | `de8c33bb-995b-4d4a-9d04-8d8af5d59601` | PowerPlatform-AzureMonitorLogs-Connector | `AADNonInteractiveUserSignInLogs`, `LAQueryLogs` | Logic Apps → Log Analytics (NOT MCP) |
-| `fc780465-2017-40d4-a0c5-307022471b92` | Sentinel Engine (analytics rules, UEBA, Advanced Hunting backend) | `LAQueryLogs` | Built-in scheduled query engine (NOT MCP). Also serves as the **execution backend for Advanced Hunting** — `RequestClientApp = "M365D_AdvancedHunting"` indicates AH queries from Triage MCP, Defender portal, or Security Copilot that hit connected LA tables (see Query 7b). Separate from analytics rules (`RequestClientApp` empty or other values). |
+| `fc780465-2017-40d4-a0c5-307022471b92` | Sentinel Engine (analytics rules, UEBA, Advanced Hunting backend) | `LAQueryLogs` | Built-in scheduled query engine (NOT MCP). Also serves as the **execution backend for Advanced Hunting** — `RequestClientApp = "M365D_AdvancedHunting"` indicates AH queries from Triage MCP, Defender portal, or Security Copilot that hit connected LA tables (see Query 7). Separate from analytics rules (`RequestClientApp` empty or other values). |
 
 ---
 
@@ -231,7 +232,7 @@ Microsoft Sentinel exposes **three official MCP collections**, each at a distinc
 
 **Sentinel Custom MCP Tools:** Organizations can create their own MCP tools by exposing saved KQL queries from Advanced Hunting as MCP tools. These execute through the same Sentinel MCP infrastructure and are audited in `CloudAppEvents` (RecordType 403) alongside built-in tools. See [Create custom Sentinel MCP tools](https://learn.microsoft.com/en-us/azure/sentinel/datalake/sentinel-mcp-create-custom-tool).
 
-> 🔵 **Monitoring note:** Custom MCP tools appear in CloudAppEvents with the same RecordType 403 and `IMcpToolTemplate` interface as built-in tools. The `ToolName` field will show the custom tool name, making them visible in Query 21 without modification.
+> 🔵 **Monitoring note:** Custom MCP tools appear in CloudAppEvents with the same RecordType 403 and `IMcpToolTemplate` interface as built-in tools. The `ToolName` field will show the custom tool name, making them visible in Query 13 without modification.
 
 ### Power BI MCP Servers
 
@@ -499,10 +500,8 @@ Business hours: **08:00–18:00 local time** (derive from user's primary sign-in
 **Filter:** `AppId == "e8c77dc2-69b3-43f4-bc51-3213c9d915b4"`
 
 Collect:
-- **Execute Query 1** to get daily usage summary with user count, success/error breakdown, avg duration
-- **Execute Query 2** to get top 25 Graph API endpoints accessed with call counts and last-used timestamps
-- **Execute Query 3** to get sensitive/high-risk endpoint access with user and scope details
-- **Execute Query 4** to discover all distinct AppIds calling Graph API for MCP identification
+- **Execute Query 1** (Unified Daily MCP Activity Trend) via `RunAdvancedHuntingQuery` — returns daily `Server | Day | Calls | Errors | ErrorRate` for ALL 4 MCP servers in one pass. Run this ONCE here; do NOT re-run in Phases 2–4. Feeds the SVG dashboard Row 5 line chart and volume anomaly detection.
+- **Execute Query 2** (Endpoint & Activity Summary) via `RunAdvancedHuntingQuery` — returns per-endpoint rows with call counts, sensitivity flag, off-hours metrics, error rates, and user sets. Replaces former Q2 + Q3 + Q11. Derive: top endpoints (`order by CallCount`), sensitive APIs (`where IsSensitive`), off-hours % (`sum(OffHoursCalls)/sum(CallCount)`).
 
 ### Phase 2: Sentinel Triage MCP Analysis
 
@@ -524,20 +523,19 @@ The Sentinel Triage MCP has a **dedicated AppId** (`7b7b3966-1961-47b5-b080-43ca
 > 🔵 **`MicrosoftGraphActivityLogs` retention** varies by environment (depends on Log Analytics workspace configuration and diagnostic settings). Do not assume a fixed retention period — check with a baseline row count query first.
 
 Collect:
-- **Execute Query 5** to get authentication events by client app (VS Code, Copilot Studio, browser) with user, IP, OS, country
-- **Execute Query 6** to get client app usage breakdown with distinct user counts and last-seen timestamps
-- **Execute Query 7** to get Triage MCP API usage from `MicrosoftGraphActivityLogs` — filter by AppId `7b7b3966` for exact Triage MCP calls with endpoint/method/user breakdown
-- **Execute Query 7a** to get Triage MCP authentication events from `SigninLogs`/`AADNonInteractiveUserSignInLogs` — sign-in frequency, user attribution, IP, OS, country
-- **Execute Query 7b** to get LAQueryLogs for Advanced Hunting downstream queries via `fc780465` / `M365D_AdvancedHunting`. Captures queries from any `RunAdvancedHuntingQuery` consumer (Triage MCP, Defender portal, Security Copilot) that hit connected LA tables. XDR-native tables (DeviceEvents, EmailEvents) don't appear here.
-- **Execute Query 7c** to get portal/platform query volume from LAQueryLogs for governance context
+- **Execute Query 3** to get authentication events by client app (VS Code, Copilot Studio, browser) with user, IP, OS, country
+- **Execute Query 4** to get client app usage breakdown with distinct user counts and last-seen timestamps
+- **Execute Query 5** to get Triage MCP API usage from `MicrosoftGraphActivityLogs` — filter by AppId `7b7b3966` for exact Triage MCP calls with endpoint/method/user breakdown
+- **Execute Query 6** to get Triage MCP authentication events from `SigninLogs`/`AADNonInteractiveUserSignInLogs` — sign-in frequency, user attribution, IP, OS, country
+- **Execute Query 7** to get LAQueryLogs for Advanced Hunting downstream queries via `fc780465` / `M365D_AdvancedHunting`. Captures queries from any `RunAdvancedHuntingQuery` consumer (Triage MCP, Defender portal, Security Copilot) that hit connected LA tables. XDR-native tables (DeviceEvents, EmailEvents) don't appear here.
 
 ### Phase 3: Sentinel Data Lake MCP Analysis
 
 **Data source:** `CloudAppEvents` (Purview unified audit log)  
-**Execution tool:** `mcp_sentinel-data_query_lake` — queries use `TimeGenerated` (Data Lake column). `CloudAppEvents` is available on both Data Lake (90d retention) and Advanced Hunting (30d, uses `Timestamp`). **Always try Data Lake first** for full retention coverage.  
+**Execution tool:** `RunAdvancedHuntingQuery` preferred (30-day lookback, free for Analytics-tier tables). `CloudAppEvents` uses `Timestamp` in AH (not `TimeGenerated`). Fall back to `mcp_sentinel-data_query_lake` (uses `TimeGenerated`, 90d retention) only if lookback > 30 days or AH returns errors.  
 **Filter:** `ActionType contains "Sentinel"` or `ActionType contains "KQL"`. RecordType is inside `RawEventData` (not a top-level column) — extract with `parse_json(tostring(RawEventData)).RecordType`. RecordType 403 = MCP tools, 379 = Direct KQL.
 
-**⚠️ MANDATORY:** Execute Query 20 against `query_lake` before reporting any gap. If the query returns 0 results or table-not-found, THEN report the gap. Do NOT skip this phase based on assumptions about E5 licensing or Purview configuration — the table may be populated even without explicit Purview setup.
+**⚠️ MANDATORY:** Execute Query 12 against `query_lake` before reporting any gap. If the query returns 0 results or table-not-found, THEN report the gap. Do NOT skip this phase based on assumptions about E5 licensing or Purview configuration — the table may be populated even without explicit Purview setup.
 
 **Audit Path:** Sentinel Data Lake MCP tools are NOT audited via `LAQueryLogs` — they are tracked through Purview unified audit log, surfaced in the `CloudAppEvents` table. RecordType 403 (inside `RawEventData`) = Sentinel AI Tool activities, RecordType 379 = KQL activities.
 
@@ -547,6 +545,11 @@ Collect:
 |---|---|---|---|---|
 | **MCP Server-driven** | 403 | `IMcpToolTemplate` | `SentinelAIToolRunStarted`, `SentinelAIToolRunCompleted` | Tool calls via Sentinel Data Lake MCP (e.g., `query_lake`, `list_sentinel_workspaces`, `search_tables`) |
 | **Direct KQL** | 379 | `Microsoft.SentinelGraph.AIPrimitives.Core.Services.KqsService` | `KQLQueryCompleted` | KQL queries executed directly via Sentinel Graph / Data Lake Explorer (no MCP intermediary) |
+
+**⚠️ Known Limitation (Discovered Mar 2026):** RecordType 403 (`SentinelAIToolRunCompleted` / `IMcpToolTemplate`) may **not be emitted** by the Data Lake MCP server. In verified testing, all Data Lake MCP tool calls (`query_lake`, `search_tables`) appeared as RecordType 379 with `Interface = "InterfaceNotProvided"` — NOT as RecordType 403. When RecordType 403 returns 0 results:
+1. **Do NOT report "0 MCP activity"** — the audit pipeline has a gap, not the usage.
+2. **Fallback:** Use Interface breakdown within RecordType 379. `InterfaceNotProvided` contains MCP-driven queries. Cross-reference users in `InterfaceNotProvided` with known Sentinel MCP users from Q4/Q6 (SigninLogs). Known portal interfaces: `msglakeexplorer@msec-msg` (Portal Data Lake Explorer), `msgjobmanagement@msec-msg` (scheduled jobs), `ipykernel_launcher.py` (Jupyter), `PowerBIConnector` (Power BI), `Microsoft.Medeina.Server` (Security Copilot).
+3. **Report as "Probable MCP"** — clearly note the attribution is based on proxy signal (user overlap), not definitive RecordType 403 classification.
 
 **Key `RawEventData` Fields:**
 
@@ -562,22 +565,18 @@ Collect:
 | `InputParameters` | Full tool input including KQL query text and workspaceId | JSON string with `query` and `workspaceId` keys |
 
 Collect:
-- **Execute Query 20** to get Data Lake MCP tool usage summary with success/failure breakdown
-- **Execute Query 21** to get tool-level breakdown with call counts and avg execution duration
-- **Execute Query 22** to get error analysis for failed Data Lake MCP tool calls
-- **Execute Query 23** to get daily activity trend across MCP and Direct KQL
-- **Execute Query 24** to get MCP vs Direct KQL delineation summary
+- **Execute Query 12** to get Data Lake MCP access pattern summary (tool/table/workspace inventory with MCP vs Direct KQL delineation)
+- **Execute Query 13** to get tool-level breakdown with call counts and avg execution duration
+- **Execute Query 14** to get error analysis for failed Data Lake MCP tool calls
 
-### Phase 4: Azure MCP Server & ARM Operations
+### Phase 4: Azure MCP Server Authentication & Queries
 
-**Data sources:** `AzureActivity`, `SigninLogs`, `AADNonInteractiveUserSignInLogs`, `LAQueryLogs`  
-**Filter:** Caller = user UPN (AzureActivity), AppId = `04b07795-8ddb-461a-bbee-02f9e1bf7b46` (sign-in logs, LAQueryLogs)
+**Data sources:** `SigninLogs`, `AADNonInteractiveUserSignInLogs`, `LAQueryLogs`  
+**Filter:** AppId = `04b07795-8ddb-461a-bbee-02f9e1bf7b46` (sign-in logs, LAQueryLogs)
 
 Collect:
-- **Execute Query 8** to get ARM operations by hour/IP with operation counts and resource provider sets
-- **Execute Query 9** to get resource provider breakdown with top operations per provider
-- **Execute Query 25** to get **Azure MCP Server authentication events** from SigninLogs/AADNonInteractiveUserSignInLogs — filter by AppId `04b07795` (Azure CLI credential, field-tested Feb 2026). 🔄 Previously documented as AppId `1950a258` (AzurePowerShellCredential) — that path is obsolete.
-- **Execute Query 26** to get **Azure MCP Server workspace queries** from LAQueryLogs — filter by AADClientId `04b07795`. `RequestClientApp` is **empty** (not a unique fingerprint). Azure MCP appends `\n| limit N` to query text — use query text pattern as differentiator.
+- **Execute Query 15** to get **Azure MCP Server authentication events** from SigninLogs/AADNonInteractiveUserSignInLogs — filter by AppId `04b07795` (Azure CLI credential, field-tested Feb 2026). 🔄 Previously documented as AppId `1950a258` (AzurePowerShellCredential) — that path is obsolete.
+- **Execute Query 16** to get **Azure MCP Server workspace queries** from LAQueryLogs — filter by AADClientId `04b07795`. `RequestClientApp` is **empty** (not a unique fingerprint). Azure MCP appends `\n| limit N` to query text — use query text pattern as differentiator.
 
 **Detection Method (🔄 Updated Feb 2026):**
 
@@ -593,7 +592,7 @@ The Azure MCP Server runs as a local .NET process (stdio mode) and authenticates
 | **AADClientId** (LAQueryLogs) | `04b07795` | `04b07795` | Shared |
 | **RequestClientApp** (LAQueryLogs) | **Empty** (`""`) | **Empty** (`""`) | Shared — not a unique differentiator. Empty `RequestClientApp` is also used by 4+ other AADClientIds |
 | **Query text pattern** (LAQueryLogs) | Appends `\n\| limit N` to all queries | No standard suffix | ✅ **Best differentiator** — Azure MCP `monitor_workspace_log_query` always appends a limit operator |
-| **AzureActivity** (Claims.appid) | `04b07795` (write ops only) | `04b07795` | Shared; read ops not logged |
+| **AzureActivity** (Claims.appid) | `04b07795` (write ops only) | `04b07795` | Shared; read ops not logged. Use Q16 `HasLimitSuffix` for query-level differentiation |
 
 **🚨 Key change from previous documentation:**
 - ❌ `RequestClientApp = "csharpsdk,LogAnalyticsPSClient"` — **OBSOLETE**, no longer produced by Azure MCP Server
@@ -631,35 +630,35 @@ The Azure MCP Server runs as a local .NET process (stdio mode) and authenticates
 **Filter:** All AADClientIds (LAQueryLogs), All Sentinel operations (CloudAppEvents)
 
 Collect:
-- **Execute Query 10** to get all clients querying the Analytics tier workspace with query counts, user counts, CPU usage
-- Data Lake tier query volume from Phase 3 results (Queries 20-24)
+- **Execute Query 8** to get all clients querying the Analytics tier workspace with query counts, user counts, CPU usage
+- Data Lake tier query volume from Phase 3 results (Queries 12-14)
 - MCP proportion calculation: combined MCP query volume (Analytics + Data Lake tiers) / total query volume
-- **Execute Query 14** to get non-MCP platform context (Sentinel Engine, Logic Apps, Sentinel Portal volumes)
 
 ### Phase 6: Agent Identity Detection
 
 **Data sources:** `MicrosoftGraphActivityLogs`, `AADServicePrincipalSignInLogs`, `AuditLogs`, Microsoft Graph API
 
 Collect:
-- **Execute Query 17** to get Graph MCP caller attribution — User vs SPN vs Agent breakdown
+- **Execute Query 9** to get Graph MCP caller attribution — User vs SPN vs Agent breakdown
 - Agent Identity inventory via Graph API — `GET /servicePrincipals?$filter=servicePrincipalType eq 'Agent'` (via Graph MCP `microsoft_graph_suggest_queries` → `microsoft_graph_get`)
-- **Execute Query 18** to get Agent Identity sign-in events from `AADServicePrincipalSignInLogs` where applicable
-- **Execute Query 19** to get Agent Identity CRUD operations from `AuditLogs` — creation, modification, deletion of agent identities
+- **Execute Query 10** to get Agent Identity sign-in events from `AADServicePrincipalSignInLogs` where applicable
+- **Execute Query 11** to get Agent Identity CRUD operations from `AuditLogs` — creation, modification, deletion of agent identities
 
-**Note:** This phase depends on Entra Agent ID (preview) being available in the tenant. If no agent identities exist, report: "✅ No Entra Agent Identities detected in tenant — all MCP callers are standard users or service principals." and skip Queries 18-19.
+**Note:** This phase depends on Entra Agent ID (preview) being available in the tenant. If no agent identities exist, report: "✅ No Entra Agent Identities detected in tenant — all MCP callers are standard users or service principals." and skip Queries 10-11.
 
 ### Phase 7: Score Computation & Report Generation
 
 1. **Compute per-dimension scores** from Phase 1-6 data:
    - **User Diversity:** Count distinct users AND distinct Agent Identities across all MCP channels
-   - **Endpoint Sensitivity:** % of Graph MCP calls to sensitive patterns (Phase 1 Query 3 vs Query 1)
+   - **Endpoint Sensitivity:** % of Graph MCP calls to sensitive patterns (Phase 1 Query 2 `IsSensitive` column)
    - **Error Rate:** % of non-2xx responses across all MCP channels
    - **Volume Anomaly:** Compare most recent day vs rolling average (Phase 1 Query 1 daily data)
-   - **Off-Hours Activity:** % of MCP calls outside 08:00-18:00 (derive from TimeGenerated)
+   - **Off-Hours Activity:** % of MCP calls outside 08:00-18:00 (Phase 1 Query 2 `OffHoursCalls` column)
 2. **Sum dimension scores** for composite MCP Usage Score
 3. **Include Agent Identity attribution** in report if any agent callers detected (Phase 6)
 4. **Generate security assessment** with emoji-coded findings
 5. **Render output** in the user's selected mode
+6. **Validate report completeness** — after composing the report, run the [Report Completeness Checklist](#report-completeness-checklist) below. Cross-check every required section against the template before saving/presenting. Fix any missing sections before finalizing.
 
 ---
 
@@ -675,47 +674,75 @@ Collect:
 | Using `has` instead of `contains` for CamelCase fields | ❌ **PROHIBITED** |
 | Executing a query not from this section without completing the [Pre-Flight Checklist](../../copilot-instructions.md#-kql-query-execution---pre-flight-checklist) | ❌ **PROHIBITED** |
 
-### Query 1: Graph MCP — Daily Usage Summary
+### Query 1: Unified Daily MCP Activity Trend
+
+**Note:** Consolidates former Q1 (Graph MCP daily), Q7d (Triage MCP daily), Q23 (Data Lake MCP daily), Q25a (Azure MCP daily) into a single union query.
+**Feeds:** SVG dashboard Row 5 line chart (`daily_mcp_trend`) — all 4 series in one query.  
+**Tool:** `mcp_sentinel-data_query_lake` (union of `SigninLogs` + `AADNonInteractiveUserSignInLogs` fails in AH when `AADNonInteractiveUserSignInLogs` is on Data Lake tier — common in customer environments).  
+**⚠️ Timestamp:** All tables use `TimeGenerated` in Data Lake (unlike AH where `CloudAppEvents` uses `Timestamp`).
 
 ```kql
-// Graph MCP daily usage trend with success/error breakdown
-// Configurable: replace ago(30d) with desired lookback
-MicrosoftGraphActivityLogs
-| where TimeGenerated >= ago(30d)
+// Unified Daily MCP Activity Trend — all 4 MCP servers in one pass
+// Configurable: replace 30d with desired lookback (max 30d for AH)
+let lookback = 30d;
+// --- Graph MCP (AppId e8c77dc2) ---
+let graph_mcp = MicrosoftGraphActivityLogs
+| where TimeGenerated >= ago(lookback)
 | where AppId == "e8c77dc2-69b3-43f4-bc51-3213c9d915b4"
-| summarize 
-    Requests = count(),
-    DistinctUsers = dcount(UserId),
-    SuccessCount = countif(ResponseStatusCode >= 200 and ResponseStatusCode < 300),
-    ErrorCount = countif(ResponseStatusCode >= 400),
-    AvgDurationMs = avg(DurationMs)
-    by bin(TimeGenerated, 1d)
-| extend ErrorRate = round(100.0 * ErrorCount / Requests, 1)
-| order by TimeGenerated desc
+| summarize Calls = count(),
+    Errors = countif(ResponseStatusCode >= 400)
+    by Day = bin(TimeGenerated, 1d)
+| extend Server = "Graph MCP";
+// --- Triage MCP (AppId 7b7b3966) ---
+let triage_mcp = MicrosoftGraphActivityLogs
+| where TimeGenerated >= ago(lookback)
+| where AppId == "7b7b3966-1961-47b5-b080-43ca5482e21c"
+| summarize Calls = count(),
+    Errors = countif(ResponseStatusCode >= 400)
+    by Day = bin(TimeGenerated, 1d)
+| extend Server = "Triage MCP";
+// --- Data Lake MCP (CloudAppEvents RecordType 379 + InterfaceNotProvided) ---
+let data_lake_mcp = CloudAppEvents
+| where TimeGenerated >= ago(lookback)
+| where ActionType contains "Sentinel" or ActionType contains "KQL"
+| extend RawData = parse_json(tostring(RawEventData))
+| extend RecordType = toint(RawData.RecordType),
+    Interface = tostring(RawData.Interface),
+    FailureReason = tostring(RawData.FailureReason)
+| where RecordType == 379 and (Interface == "InterfaceNotProvided" or isempty(Interface))
+| summarize Calls = count(),
+    Errors = countif(isnotempty(FailureReason) and FailureReason != "")
+    by Day = bin(TimeGenerated, 1d)
+| extend Server = "Data Lake MCP";
+// --- Azure MCP/CLI (AppId 04b07795 — shared with Azure CLI) ---
+let azure_interactive = SigninLogs
+| where TimeGenerated >= ago(lookback)
+| where AppId == "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
+| project TimeGenerated, ResultType;
+let azure_noninteractive = AADNonInteractiveUserSignInLogs
+| where TimeGenerated >= ago(lookback)
+| where AppId == "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
+| project TimeGenerated, ResultType;
+let azure_mcp = union azure_interactive, azure_noninteractive
+| summarize Calls = count(),
+    Errors = countif(ResultType != "0" and ResultType != "")
+    by Day = bin(TimeGenerated, 1d)
+| extend Server = "Azure MCP/CLI";
+// --- Union all servers ---
+union graph_mcp, triage_mcp, data_lake_mcp, azure_mcp
+| extend ErrorRate = iff(Calls > 0, round(100.0 * Errors / Calls, 1), 0.0)
+| project Server, Day, Calls, Errors, ErrorRate
+| order by Day asc, Server asc
 ```
 
-### Query 2: Graph MCP — Top Endpoints Accessed
+### Query 2: Graph MCP — Endpoint & Activity Summary
+
+**Replaces:** former Q2 (Top Endpoints), Q3 (Sensitive API Access), Q11 (Off-Hours Activity).  
+**Tool:** `RunAdvancedHuntingQuery`  
+**Report derivation:** Top endpoints = all rows by `CallCount desc`. Sensitive endpoints = `where IsSensitive`. Off-hours % = `sum(OffHoursCalls)` / `sum(CallCount)` across all rows.
 
 ```kql
-// Most-called Graph API endpoints via MCP, with user and recency info
-MicrosoftGraphActivityLogs
-| where TimeGenerated >= ago(30d)
-| where AppId == "e8c77dc2-69b3-43f4-bc51-3213c9d915b4"
-| extend Endpoint = tostring(split(RequestUri, "?")[0])
-| summarize 
-    CallCount = count(),
-    DistinctUsers = dcount(UserId),
-    LastUsed = max(TimeGenerated),
-    Methods = make_set(RequestMethod, 5)
-    by Endpoint
-| order by CallCount desc
-| take 25
-```
-
-### Query 3: Graph MCP — Sensitive API Access
-
-```kql
-// Flag MCP calls to high-risk Graph endpoints (PIM, credentials, Identity Protection)
+// Graph MCP — single-pass endpoint analysis with sensitivity + off-hours enrichment
 let sensitive_patterns = dynamic([
     "roleManagement", "roleAssignments", "roleEligibility",
     "authentication/methods", "identityProtection", "riskyUsers",
@@ -727,31 +754,32 @@ let sensitive_patterns = dynamic([
 MicrosoftGraphActivityLogs
 | where TimeGenerated >= ago(30d)
 | where AppId == "e8c77dc2-69b3-43f4-bc51-3213c9d915b4"
-| where RequestUri has_any (sensitive_patterns)
-| project TimeGenerated, UserId, RequestMethod, RequestUri, 
-    ResponseStatusCode, IPAddress, Scopes
-| order by TimeGenerated desc
-```
-
-### Query 4: All Graph API AppIds — Discovery
-
-```kql
-// Discover all apps calling Graph APIs — find unknown MCP servers or AI agents
-MicrosoftGraphActivityLogs
-| where TimeGenerated >= ago(30d)
+| extend Endpoint = tostring(split(RequestUri, "?")[0])
+| extend HourOfDay = datetime_part("hour", TimeGenerated)
+| extend DayOfWeek = dayofweek(TimeGenerated) / 1d
+| extend IsOffHours = HourOfDay < 8 or HourOfDay >= 18 or DayOfWeek >= 5
+| extend IsSensitive = RequestUri has_any (sensitive_patterns)
 | summarize 
-    RequestCount = count(),
+    CallCount = count(),
     DistinctUsers = dcount(UserId),
-    FirstSeen = min(TimeGenerated),
-    LastSeen = max(TimeGenerated),
-    SampleEndpoints = make_set(tostring(split(RequestUri, "?")[0]), 3)
-    by AppId
-| order by RequestCount desc
+    ErrorCount = countif(ResponseStatusCode >= 400),
+    AvgDurationMs = round(avg(DurationMs), 0),
+    OffHoursCalls = countif(IsOffHours),
+    Methods = make_set(RequestMethod, 5),
+    Users = make_set(UserId, 10),
+    LastUsed = max(TimeGenerated)
+    by Endpoint, IsSensitive
+| extend 
+    ErrorRate = round(100.0 * ErrorCount / CallCount, 1),
+    OffHoursPct = round(100.0 * OffHoursCalls / CallCount, 1)
+| order by CallCount desc
+| take 50
 ```
 
-### Query 5: Sentinel MCP — Authentication Events
+### Query 3: Sentinel MCP — Authentication Events
 
-**⚠️ Pitfall-aware:** Uses `parse_json(Status)` and `parse_json(DeviceDetail)` wrappers — see [SigninLogs Status Field Needs parse_json()](#signinlogs-status-field-needs-parse_json-in-data-lake). Direct dot-notation fails in Data Lake.
+**Tool:** `RunAdvancedHuntingQuery` (30-day lookback, free for Analytics-tier tables). Fall back to `mcp_sentinel-data_query_lake` only if lookback > 30 days.  
+**⚠️ Pitfall-aware:** Uses `parse_json(Status)` and `parse_json(DeviceDetail)` wrappers — required for Data Lake (string columns) and safe in AH. Uses `=` syntax (not `as`) in `project` — see [project as Keyword Fails in Advanced Hunting](#project-as-keyword-fails-in-advanced-hunting).
 
 ```kql
 // Who is authenticating to Sentinel MCP (via VS Code, Copilot Studio, browser)
@@ -760,14 +788,16 @@ SigninLogs
 | where ResourceDisplayName =~ "Sentinel Platform Services"
 | project TimeGenerated, UserPrincipalName, AppDisplayName, AppId,
     ResourceDisplayName, IPAddress, 
-    tostring(parse_json(Status).errorCode) as ErrorCode,
+    ErrorCode = tostring(parse_json(Status).errorCode),
     ConditionalAccessStatus, AuthenticationRequirement, ClientAppUsed,
-    tostring(parse_json(DeviceDetail).operatingSystem) as OS,
-    tostring(parse_json(LocationDetails).countryOrRegion) as Country
+    OS = tostring(parse_json(DeviceDetail).operatingSystem),
+    Country = tostring(parse_json(LocationDetails).countryOrRegion)
 | order by TimeGenerated desc
 ```
 
-### Query 6: Sentinel MCP — Client App Breakdown
+### Query 4: Sentinel MCP — Client App Breakdown
+
+**Tool:** `RunAdvancedHuntingQuery` (30-day lookback, free for Analytics-tier tables).
 
 ```kql
 // Which client apps (VS Code, Copilot Studio, browser) are accessing Sentinel MCP
@@ -783,7 +813,7 @@ SigninLogs
 | order by SignInCount desc
 ```
 
-### Query 7: Sentinel Triage MCP — API Call Activity (Dedicated AppId)
+### Query 5: Sentinel Triage MCP — API Call Activity (Dedicated AppId)
 
 ```kql
 // Measure Sentinel Triage MCP API calls via its dedicated AppId in MicrosoftGraphActivityLogs.
@@ -814,12 +844,15 @@ MicrosoftGraphActivityLogs
 | take 25
 ```
 
-### Query 7a: Sentinel Triage MCP — Authentication Events (SigninLogs)
+### Query 6: Sentinel Triage MCP — Authentication Events (SigninLogs)
+
+**Tool:** `mcp_sentinel-data_query_lake` (union of `SigninLogs` + `AADNonInteractiveUserSignInLogs` fails in AH when `AADNonInteractiveUserSignInLogs` is on Data Lake tier — common in customer environments).  
+**⚠️ Pitfall-aware:** Uses `parse_json()` wrappers on DeviceDetail/LocationDetails — required for Data Lake (string columns). Uses `=` syntax (not `as`) in `project`.
 
 ```kql
 // Triage MCP authentication events from SigninLogs + AADNonInteractiveUserSignInLogs.
 // AppId 7b7b3966 = "Microsoft Defender Mcp" — delegated auth with certificate.
-// Uses parse_json() wrappers for DeviceDetail/LocationDetails (Data Lake string columns).
+// Uses parse_json() wrappers for DeviceDetail/LocationDetails (safe in both AH and Data Lake).
 let triage_mcp_appid = "7b7b3966-1961-47b5-b080-43ca5482e21c";
 let signinlogs_interactive = SigninLogs
 | where TimeGenerated >= ago(30d)
@@ -859,7 +892,7 @@ union signinlogs_interactive, signinlogs_noninteractive
 | order by SignIns desc
 ```
 
-### Query 7b: LAQueryLogs — Advanced Hunting Downstream Queries (Supplementary Signal)
+### Query 7: LAQueryLogs — Advanced Hunting Downstream Queries (Supplementary Signal)
 
 ```kql
 // SUPPLEMENTARY detection: Advanced Hunting queries (from Triage MCP, Defender portal,
@@ -874,9 +907,9 @@ union signinlogs_interactive, signinlogs_noninteractive
 // Queries hitting XDR-native tables (DeviceEvents, EmailEvents, etc.) stay in the
 // Defender XDR backend and never appear here.
 //
-// Use alongside Query 7 (MicrosoftGraphActivityLogs) for complete Triage MCP coverage:
-//   - Query 7 = PRIMARY: Triage MCP API calls filtered by dedicated AppId 7b7b3966
-//   - Query 7b = SUPPLEMENTARY: downstream query execution when AH hits LA tables
+// Use alongside Query 5 (MicrosoftGraphActivityLogs) for complete Triage MCP coverage:
+//   - Query 5 = PRIMARY: Triage MCP API calls filtered by dedicated AppId 7b7b3966
+//   - Query 7 = SUPPLEMENTARY: downstream query execution when AH hits LA tables
 //
 // ATTRIBUTION LIMITATION: Cannot distinguish Triage MCP AH queries from Defender portal
 // AH queries or Security Copilot AH queries — all appear as M365D_AdvancedHunting.
@@ -895,68 +928,7 @@ LAQueryLogs
 | order by QueryCount desc
 ```
 
-### Query 7c: LAQueryLogs — Portal & Platform Query Volume (Non-MCP Governance)
-
-```kql
-// Query volume for Portal/Platform AppIds in LAQueryLogs (governance context).
-// NOTE: These are NOT MCP servers — included for workspace query governance baseline.
-// 80ccca67 = M365 Security & Compliance Center (Sentinel Portal backend)
-// 95a5d94c = Azure Portal AppInsightsPortalExtension (Usage dashboards)
-let portal_appids = dynamic([
-    "80ccca67-54bd-44ab-8625-4b79c4dc7775",  // M365 Security & Compliance Center (Sentinel Portal)
-    "95a5d94c-a1a0-40eb-ac6d-48c5bdee96d5"   // Azure Portal — AppInsightsPortalExtension (Usage dashboards)
-]);
-LAQueryLogs
-| where TimeGenerated >= ago(30d)
-| where AADClientId in (portal_appids)
-| extend Category = "Portal/Platform"
-| summarize 
-    QueryCount = count(),
-    DistinctUsers = dcount(AADEmail),
-    AvgCPUMs = avg(StatsCPUTimeMs),
-    AvgRowsPerQuery = avg(ResponseRowCount),
-    TotalRowsReturned = sum(ResponseRowCount),
-    FirstSeen = min(TimeGenerated),
-    LastSeen = max(TimeGenerated)
-    by AADClientId, Category
-| order by QueryCount desc
-```
-
-### Query 8: Azure MCP — ARM Operations
-
-```kql
-// Azure ARM operations (may include Azure MCP Server — no dedicated AppId)
-// Substitute <UPN> with the user's UPN
-AzureActivity
-| where TimeGenerated >= ago(30d)
-| where Caller =~ '<UPN>'
-| where CategoryValue == "Administrative"
-| summarize
-    OperationCount = count(),
-    DistinctOperations = dcount(OperationNameValue),
-    ResourceProviders = make_set(ResourceProviderValue, 10)
-    by bin(TimeGenerated, 1d), CallerIpAddress
-| order by TimeGenerated desc
-```
-
-### Query 9: Azure MCP — Resource Provider Breakdown
-
-```kql
-// Azure resource types being accessed — detect unexpected resource access
-// Substitute <UPN> with the user's UPN
-AzureActivity
-| where TimeGenerated >= ago(30d)
-| where Caller =~ '<UPN>'
-| where CategoryValue == "Administrative"
-| summarize
-    CallCount = count(),
-    Operations = make_set(OperationNameValue, 5),
-    DistinctResources = dcount(ResourceGroup)
-    by ResourceProviderValue
-| order by CallCount desc
-```
-
-### Query 10: All Workspace Query Sources — Complete Governance View
+### Query 8: All Workspace Query Sources — Complete Governance View
 
 ```kql
 // Every client querying the workspace — MCP and non-MCP combined
@@ -971,141 +943,7 @@ LAQueryLogs
 | order by QueryCount desc
 ```
 
-### Query 11: Graph MCP — Off-Hours Activity Detection
-
-```kql
-// Identify MCP calls outside business hours (08:00-18:00 UTC)
-MicrosoftGraphActivityLogs
-| where TimeGenerated >= ago(30d)
-| where AppId == "e8c77dc2-69b3-43f4-bc51-3213c9d915b4"
-| extend HourOfDay = datetime_part("hour", TimeGenerated)
-| extend DayOfWeek = dayofweek(TimeGenerated) / 1d
-| extend IsOffHours = HourOfDay < 8 or HourOfDay >= 18 or DayOfWeek >= 5
-| summarize
-    TotalCalls = count(),
-    OffHoursCalls = countif(IsOffHours),
-    BusinessHoursCalls = countif(not(IsOffHours)),
-    OffHoursUsers = make_set_if(UserId, IsOffHours, 10)
-    by bin(TimeGenerated, 1d)
-| extend OffHoursPct = round(100.0 * OffHoursCalls / TotalCalls, 1)
-| order by TimeGenerated desc
-```
-
-### Query 12: Graph MCP — New User Detection (Baseline Comparison)
-
-```kql
-// Detect users who started using Graph MCP in the recent window but weren't in baseline
-let baselineStart = ago(60d);
-let baselineEnd = ago(7d);
-let recentStart = ago(7d);
-let baseline_users = MicrosoftGraphActivityLogs
-| where TimeGenerated between (baselineStart .. baselineEnd)
-| where AppId == "e8c77dc2-69b3-43f4-bc51-3213c9d915b4"
-| distinct UserId;
-MicrosoftGraphActivityLogs
-| where TimeGenerated >= recentStart
-| where AppId == "e8c77dc2-69b3-43f4-bc51-3213c9d915b4"
-| where UserId !in (baseline_users)
-| summarize
-    CallCount = count(),
-    FirstSeen = min(TimeGenerated),
-    Endpoints = make_set(tostring(split(RequestUri, "?")[0]), 10),
-    IPs = make_set(IPAddress, 5)
-    by UserId
-| order by CallCount desc
-```
-
-### Query 13: Sentinel MCP — Query Content Audit
-
-```kql
-// Audit actual KQL queries executed by MCP servers and Portal/Platform apps (sample)
-let mcp_server_appids = dynamic([
-    "7b7b3966-1961-47b5-b080-43ca5482e21c"   // Sentinel Triage MCP ("Microsoft Defender Mcp")
-]);
-let portal_appids = dynamic([
-    "80ccca67-54bd-44ab-8625-4b79c4dc7775",  // M365 Security & Compliance Center (Sentinel Portal)
-    "95a5d94c-a1a0-40eb-ac6d-48c5bdee96d5"   // Azure Portal — AppInsightsPortalExtension (Usage dashboards)
-]);
-LAQueryLogs
-| where TimeGenerated >= ago(7d)
-| where AADClientId in (mcp_server_appids) or AADClientId in (portal_appids)
-| extend Category = case(
-    AADClientId in (mcp_server_appids), "MCP Server",
-    "Portal/Platform")
-| project TimeGenerated, AADEmail, AADClientId, Category,
-    QueryTextTruncated = substring(QueryText, 0, 200),
-    ResponseCode, ResponseRowCount, StatsCPUTimeMs
-| order by TimeGenerated desc
-| take 50
-```
-
-### Query 14: Unified MCP + Non-MCP Dashboard
-
-```kql
-// Combined MCP vs non-MCP view for workspace governance (Analytics tier)
-let mcp_graph = MicrosoftGraphActivityLogs
-| where TimeGenerated >= ago(30d)
-| where AppId == "e8c77dc2-69b3-43f4-bc51-3213c9d915b4"
-| summarize Count = count() by Source = "Graph MCP", Category = "MCP", bin(TimeGenerated, 1d);
-let mcp_triage = MicrosoftGraphActivityLogs
-| where TimeGenerated >= ago(30d)
-| where AppId == "7b7b3966-1961-47b5-b080-43ca5482e21c"
-| summarize Count = count() by Source = "Sentinel Triage MCP (Microsoft Defender Mcp)", Category = "MCP", bin(TimeGenerated, 1d);
-let sentinel_portal = LAQueryLogs
-| where TimeGenerated >= ago(30d)
-| where AADClientId == "80ccca67-54bd-44ab-8625-4b79c4dc7775"
-| summarize Count = count() by Source = "Sentinel Portal", Category = "Portal", bin(TimeGenerated, 1d);
-let portal_appinsights = LAQueryLogs
-| where TimeGenerated >= ago(30d)
-| where AADClientId == "95a5d94c-a1a0-40eb-ac6d-48c5bdee96d5"
-| summarize Count = count() by Source = "Azure Portal (AppInsightsPortalExtension)", Category = "Portal", bin(TimeGenerated, 1d);
-let platform_logic_apps = LAQueryLogs
-| where TimeGenerated >= ago(30d)
-| where AADClientId == "de8c33bb-995b-4d4a-9d04-8d8af5d59601"
-| summarize Count = count() by Source = "Logic Apps Connector", Category = "Platform", bin(TimeGenerated, 1d);
-let platform_sentinel_engine = LAQueryLogs
-| where TimeGenerated >= ago(30d)
-| where AADClientId == "fc780465-2017-40d4-a0c5-307022471b92"
-| summarize Count = count() by Source = "Sentinel Engine", Category = "Platform", bin(TimeGenerated, 1d);
-union mcp_graph, mcp_triage, sentinel_portal, portal_appinsights, platform_logic_apps, platform_sentinel_engine
-| summarize TotalQueries = sum(Count) by Source, Category, bin(TimeGenerated, 1d)
-| order by TimeGenerated desc
-```
-
-> **Note:** This query covers the **Analytics tier** (LAQueryLogs + MicrosoftGraphActivityLogs). For **Data Lake tier** query governance, combine with Query 24 results from `CloudAppEvents`.
-
-### Query 15: Sentinel Audit — Configuration Changes
-
-```kql
-// Sentinel workspace configuration changes (analytics rules, connectors, etc.)
-SentinelAudit
-| where TimeGenerated >= ago(30d)
-| summarize 
-    ChangeCount = count(),
-    OperationTypes = make_set(OperationName)
-    by SentinelResourceType
-| order by ChangeCount desc
-```
-
-### Query 16: Logic Apps — Non-MCP Query Monitoring
-
-```kql
-// Track automated queries from Logic Apps (standard connector, NOT MCP)
-LAQueryLogs
-| where TimeGenerated >= ago(30d)
-| where AADClientId == "de8c33bb-995b-4d4a-9d04-8d8af5d59601"
-| summarize
-    QueryCount = count(),
-    DistinctQueries = dcount(QueryText),
-    AvgCPUMs = avg(StatsCPUTimeMs),
-    TotalRows = sum(ResponseRowCount),
-    FirstSeen = min(TimeGenerated),
-    LastSeen = max(TimeGenerated)
-    by AADEmail, RequestClientApp
-| order by QueryCount desc
-```
-
-### Query 17: Graph MCP — Caller Attribution (User vs SPN vs Agent)
+### Query 9: Graph MCP — Caller Attribution (User vs SPN vs Agent)
 
 ```kql
 // Attribute Graph MCP calls to User, Service Principal, or Agent Identity
@@ -1147,17 +985,17 @@ MicrosoftGraphActivityLogs
 
 Use `microsoft_graph_suggest_queries` → `microsoft_graph_get` for the Graph API calls. Query multiple SPNs in one call: `/beta/servicePrincipals?$count=true&$filter=id in ('id1','id2')&$select=id,appId,displayName,servicePrincipalType,tags`.
 
-### Query 18: Agent Identity Sign-In Events
+### Query 10: Agent Identity Sign-In Events
 
 ```kql
 // Agent Identity sign-ins — look for Copilot Studio agent SPNs
 // Field-tested: Copilot Studio agents sign in to "Bot Framework" from Azure internal IPv6 (fd00:34f2:*)
 // Also check for Graph, Sentinel resources in case agents expand scope
-// Cross-reference ServicePrincipalId values from Query 19 AuditLogs results
+// Cross-reference ServicePrincipalId values from Query 11 AuditLogs results
 // Substitute <AGENT_SPN_IDS> with confirmed agent SPN IDs (or remove filter for broad discovery)
 AADServicePrincipalSignInLogs
 | where TimeGenerated >= ago(30d)
-// Uncomment the next line if you have confirmed agent SPN IDs from Query 19 / Graph API:
+// Uncomment the next line if you have confirmed agent SPN IDs from Query 11 / Graph API:
 // | where ServicePrincipalId in (<AGENT_SPN_IDS>)
 | where ResourceDisplayName has_any ("Graph", "Sentinel", "Microsoft Graph", "Bot Framework")
 | summarize
@@ -1178,9 +1016,9 @@ AADServicePrincipalSignInLogs
 - **Resource:** `Bot Framework` (NOT `Microsoft Graph` — agents talk to Bot Framework runtime)
 - **IP addresses:** Azure internal IPv6 (`fd00:34f2:*`) — these are Azure infrastructure IPs, not user IPs
 - **Sign-in volume:** Low (single-digit sign-ins typical for idle agents)
-- **Correlation:** Match `ServicePrincipalId` here with `TargetId` from Query 19 AuditLogs to confirm the same agent
+- **Correlation:** Match `ServicePrincipalId` here with `TargetId` from Query 11 AuditLogs to confirm the same agent
 
-### Query 19: Agent Identity CRUD Operations in AuditLogs
+### Query 11: Agent Identity CRUD Operations in AuditLogs
 
 ```kql
 // Track creation, modification, and deletion of Agent Identities
@@ -1217,161 +1055,17 @@ AuditLogs
 - `OperationName` = `Hard delete service principal` shortly after `Add service principal` → Testing/experimentation pattern
 - Multiple operations (`Add SPN` → `Add owner` → `Update SPN`) within seconds → Copilot Studio automated provisioning sequence
 
-### Query 20: Data Lake MCP — Tool Usage Summary
+### Query 12: Data Lake MCP — Access Pattern Summary
 
+**Note:** Consolidates former Q20 (Tool Usage Summary) + Q24 (MCP vs Direct KQL Delineation) into a single query.
+**Tool:** `RunAdvancedHuntingQuery` (uses `Timestamp` for CloudAppEvents).  
 **⚠️ Pitfall-aware:** Uses `contains` (not `has`) for ActionType/Operation — see [CloudAppEvents CamelCase Matching](#cloudappevents-camelcase-matching-actiontype-and-operation). Uses `parse_json(tostring(RawEventData))` — see [CloudAppEvents RawEventData Parsing](#cloudappevents-raweventsdata-parsing). Filters on `SentinelAIToolRunCompleted` only — see [CloudAppEvents Double-Counting Prevention](#cloudappevents-double-counting-prevention).
 
 ```kql
-// Sentinel Data Lake MCP tool usage from CloudAppEvents (Purview unified audit)
-// RecordType 403 = Sentinel AI Tool activities (MCP), RecordType 379 = KQL activities (direct)
-// IMPORTANT: Use 'contains' (not 'has') for ActionType — CamelCase values have no word boundaries
+// Data Lake MCP — single-pass access pattern delineation + tool/table/workspace inventory
+// Combines former Q20 (summary) and Q24 (delineation) into one query
 CloudAppEvents
-| where TimeGenerated >= ago(30d)
-| where ActionType contains "Sentinel" or ActionType contains "KQL"
-| extend RawData = parse_json(tostring(RawEventData))
-| extend 
-    Operation = tostring(RawData.Operation),
-    RecordType = toint(RawData.RecordType),
-    ToolName = tostring(RawData.ToolName),
-    Interface = tostring(RawData.Interface),
-    ExecutionDuration = todouble(RawData.ExecutionDuration),
-    FailureReason = tostring(RawData.FailureReason),
-    TablesRead = tostring(RawData.TablesRead),
-    DatabasesRead = tostring(RawData.DatabasesRead),
-    TotalRows = toint(RawData.TotalRows),
-    UserId_raw = tostring(RawData.UserId)
-| extend 
-    AccessPattern = case(
-        RecordType == 403 and Interface == "IMcpToolTemplate", "MCP Server-Driven",
-        RecordType == 379, "Direct KQL",
-        "Other"),
-    IsSuccess = isempty(FailureReason) or FailureReason == ""
-| where Operation contains "Completed" or RecordType == 379  // Focus on completed events; use 'contains' not 'has' — CamelCase has no word boundaries
-| summarize
-    TotalCalls = count(),
-    SuccessCount = countif(IsSuccess),
-    FailureCount = countif(not(IsSuccess)),
-    DistinctTools = dcount(ToolName),
-    DistinctTables = dcount(TablesRead),
-    AvgDurationSec = round(avg(ExecutionDuration), 2),
-    TotalRowsReturned = sum(TotalRows),
-    DistinctUsers = dcount(UserId_raw),
-    Users = make_set(UserId_raw, 10)
-    by AccessPattern
-| extend ErrorRate = round(100.0 * FailureCount / TotalCalls, 1)
-| order by TotalCalls desc
-```
-
-### Query 21: Data Lake MCP — Tool Breakdown
-
-**⚠️ Pitfall-aware:** Uses `contains`/`parse_json(tostring())` pattern — see Query 20 pitfall notes. Uses `todouble(ExecutionDuration)` — see [Data Lake MCP ExecutionDuration Format](#data-lake-mcp-executionduration-format).
-
-```kql
-// Breakdown of individual MCP tool usage from CloudAppEvents
-// Shows which Data Lake MCP tools are being called most frequently
-CloudAppEvents
-| where TimeGenerated >= ago(30d)
-| where ActionType contains "SentinelAITool"
-| extend RawData = parse_json(tostring(RawEventData))
-| extend 
-    Operation = tostring(RawData.Operation),
-    ToolName = tostring(RawData.ToolName),
-    ExecutionDuration = todouble(RawData.ExecutionDuration),
-    FailureReason = tostring(RawData.FailureReason),
-    TablesRead = tostring(RawData.TablesRead)
-| where Operation == "SentinelAIToolRunCompleted"  // Only count completions to avoid double-counting
-| extend IsSuccess = isempty(FailureReason) or FailureReason == ""
-| summarize
-    CallCount = count(),
-    SuccessCount = countif(IsSuccess),
-    FailureCount = countif(not(IsSuccess)),
-    AvgDurationSec = round(avg(ExecutionDuration), 2),
-    MaxDurationSec = round(max(ExecutionDuration), 2),
-    TablesAccessed = make_set(TablesRead, 20),
-    FirstSeen = min(TimeGenerated),
-    LastSeen = max(TimeGenerated)
-    by ToolName
-| extend ErrorRate = round(100.0 * FailureCount / CallCount, 1)
-| order by CallCount desc
-```
-
-### Query 22: Data Lake MCP — Error Analysis
-
-**⚠️ Pitfall-aware:** Uses `contains`/`parse_json(tostring())` pattern — see Query 20 pitfall notes.
-
-```kql
-// Analyze failed Data Lake MCP tool calls — identify schema errors, permission issues, etc.
-CloudAppEvents
-| where TimeGenerated >= ago(30d)
-| where ActionType contains "SentinelAITool"
-| extend RawData = parse_json(tostring(RawEventData))
-| extend 
-    Operation = tostring(RawData.Operation),
-    ToolName = tostring(RawData.ToolName),
-    FailureReason = tostring(RawData.FailureReason),
-    TablesRead = tostring(RawData.TablesRead),
-    UserId_raw = tostring(RawData.UserId)
-| where Operation == "SentinelAIToolRunCompleted"
-| where isnotempty(FailureReason) and FailureReason != ""
-| extend ErrorCategory = case(
-    FailureReason has "SemanticError", "Schema/Semantic Error",
-    FailureReason has "SyntaxError", "KQL Syntax Error",
-    FailureReason has "Unauthorized" or FailureReason has "403", "Permission Denied",
-    FailureReason has "Timeout", "Query Timeout",
-    FailureReason has "NotFound", "Table/Resource Not Found",
-    "Other Error")
-| summarize
-    ErrorCount = count(),
-    Tools = make_set(ToolName, 10),
-    Tables = make_set(TablesRead, 10),
-    Users = make_set(UserId_raw, 10),
-    SampleErrors = make_set(substring(FailureReason, 0, 150), 5),
-    FirstSeen = min(TimeGenerated),
-    LastSeen = max(TimeGenerated)
-    by ErrorCategory
-| order by ErrorCount desc
-```
-
-### Query 23: Data Lake MCP — Daily Activity Trend
-
-**⚠️ Pitfall-aware:** Uses `contains`/`parse_json(tostring())` pattern — see Query 20 pitfall notes.
-
-```kql
-// Daily activity trend for Data Lake MCP tools and Direct KQL
-// Use this for volume anomaly detection and trend analysis
-CloudAppEvents
-| where TimeGenerated >= ago(30d)
-| where ActionType contains "Sentinel" or ActionType contains "KQL"
-| extend RawData = parse_json(tostring(RawEventData))
-| extend 
-    Operation = tostring(RawData.Operation),
-    RecordType = toint(RawData.RecordType),
-    Interface = tostring(RawData.Interface),
-    FailureReason = tostring(RawData.FailureReason)
-| extend 
-    AccessPattern = case(
-        RecordType == 403 and Interface == "IMcpToolTemplate", "MCP Server-Driven",
-        RecordType == 379, "Direct KQL",
-        "Other"),
-    IsSuccess = isempty(FailureReason) or FailureReason == ""
-| where Operation contains "Completed" or RecordType == 379  // 'contains' not 'has' — CamelCase
-| summarize
-    Calls = count(),
-    SuccessCount = countif(IsSuccess),
-    FailureCount = countif(not(IsSuccess))
-    by AccessPattern, bin(TimeGenerated, 1d)
-| extend ErrorRate = round(100.0 * FailureCount / Calls, 1)
-| order by TimeGenerated desc, AccessPattern asc
-```
-
-### Query 24: MCP vs Direct KQL — Access Pattern Delineation
-
-```kql
-// Comprehensive delineation of MCP-driven vs Direct KQL access to Sentinel Data Lake
-// Combines RecordType, Interface, and Operation to classify every Data Lake interaction
-// This is the key governance query for understanding WHO is querying the Data Lake and HOW
-CloudAppEvents
-| where TimeGenerated >= ago(30d)
+| where Timestamp >= ago(30d)
 | where ActionType contains "Sentinel" or ActionType contains "KQL"
 | extend RawData = parse_json(tostring(RawEventData))
 | extend 
@@ -1389,7 +1083,10 @@ CloudAppEvents
 | extend 
     AccessPattern = case(
         RecordType == 403 and Interface == "IMcpToolTemplate", "MCP Server-Driven",
-        RecordType == 379, "Direct KQL",
+        RecordType == 379 and (Interface == "InterfaceNotProvided" or isempty(Interface)), "MCP-Driven (Probable)",
+        RecordType == 379 and Interface has "msglakeexplorer", "Portal (Data Lake Explorer)",
+        RecordType == 379 and Interface has "msgjobmanagement", "Scheduled Jobs",
+        RecordType == 379, "Other Direct KQL",
         "Other"),
     IsSuccess = isempty(FailureReason) or FailureReason == "",
     HasKQLQuery = InputParams has "query"
@@ -1408,27 +1105,129 @@ CloudAppEvents
     DistinctUsers = dcount(UserId_raw),
     Users = make_set(UserId_raw, 10),
     KQLQueryCount = countif(HasKQLQuery),
-    FirstSeen = min(TimeGenerated),
-    LastSeen = max(TimeGenerated)
+    FirstSeen = min(Timestamp),
+    LastSeen = max(Timestamp)
     by AccessPattern
 | extend ErrorRate = round(100.0 * FailureCount / TotalCalls, 1)
 | order by TotalCalls desc
 ```
 
-**Post-processing for Query 24:**
-- **MCP Server-Driven** rows represent tool calls via the Sentinel Data Lake MCP (GitHub Copilot → MCP Server → Data Lake)
-- **Direct KQL** rows represent queries executed via Sentinel Graph / Data Lake Explorer (human or service principal → KQL query → Data Lake)
-- Combine this with Query 14 (Analytics tier) for a **complete two-tier governance view**:
+**Post-processing for Query 12:**
+- If `MCP Server-Driven` (RecordType 403) has results → use it directly as the definitive MCP count.
+- If `MCP Server-Driven` returns 0 rows but `MCP-Driven (Probable)` has results → report the probable count with the audit gap caveat. Cross-reference users with Q4/Q6 SigninLogs to validate.
+- `Portal (Data Lake Explorer)` = `msglakeexplorer@msec-msg` interface, `Scheduled Jobs` = `msgjobmanagement@msec-msg`.
+- Combine with Query 8 (Analytics tier LAQueryLogs — all workspace sources) for a **complete two-tier governance view**:
 
 | Tier | Data Source | MCP Sources | Non-MCP Sources |
 |------|------------|-------------|-----------------|
-| **Analytics Tier** | `LAQueryLogs` | AH backend `fc780465` / `M365D_AdvancedHunting` *(captures AH queries from Triage MCP, Defender portal, Security Copilot that hit connected LA tables; shared surface, see Query 7b)* | Sentinel Portal (`80ccca67`), Sentinel Engine analytics (`fc780465`, non-AH), Logic Apps (`de8c33bb`) |
+| **Analytics Tier** | `LAQueryLogs` | AH backend `fc780465` / `M365D_AdvancedHunting` *(captures AH queries from Triage MCP, Defender portal, Security Copilot that hit connected LA tables; shared surface, see Query 7)* | Sentinel Portal (`80ccca67`), Sentinel Engine analytics (`fc780465`, non-AH), Logic Apps (`de8c33bb`) |
 | **Data Lake Tier** | `CloudAppEvents` | Data Lake MCP (RecordType 403, `IMcpToolTemplate`) | Direct KQL (RecordType 379, `KqsService`) |
 | **Graph API** | `MicrosoftGraphActivityLogs` | Graph MCP (`e8c77dc2`) | — |
 | **Azure MCP** | `SigninLogs`, `AADNonInteractiveUserSignInLogs`, `LAQueryLogs` | Azure MCP Server (`04b07795`, empty `RequestClientApp`, query text `\n| limit N` suffix) | Azure CLI (same AppId, same empty `RequestClientApp`) |
 
-### Query 25: Azure MCP Server — Authentication Events (SigninLogs)
+### Query 13: Data Lake MCP — Interface Breakdown
 
+**Tool:** `RunAdvancedHuntingQuery` (uses `Timestamp` for CloudAppEvents).  
+**⚠️ Pitfall-aware:** Uses `contains`/`parse_json(tostring())` pattern — see Query 12 pitfall notes. Uses `todouble(ExecutionDuration)` — see [Data Lake MCP ExecutionDuration Format](#data-lake-mcp-executionduration-format). When RecordType 403 is present, groups by ToolName; when absent, falls back to Interface field.
+
+```kql
+// Breakdown of Data Lake access by Interface — identifies MCP vs Portal vs Jobs
+// PRIMARY: Uses RecordType 403 / ToolName when available (MCP audit events)
+// FALLBACK: When RecordType 403 absent, groups by Interface field from RecordType 379
+//   - InterfaceNotProvided = probable MCP-driven (cross-ref with Q4/Q6 SigninLogs)
+//   - msglakeexplorer@msec-msg = Sentinel Portal Data Lake Explorer
+//   - msgjobmanagement@msec-msg = Scheduled/job-based queries
+//   - ipykernel_launcher.py = Jupyter Notebook
+//   - PowerBIConnector = Power BI
+//   - Microsoft.Medeina.Server = Security Copilot
+CloudAppEvents
+| where Timestamp >= ago(30d)
+| where ActionType contains "Sentinel" or ActionType contains "KQL"
+| extend RawData = parse_json(tostring(RawEventData))
+| extend 
+    Operation = tostring(RawData.Operation),
+    RecordType = toint(RawData.RecordType),
+    ToolName = tostring(RawData.ToolName),
+    Interface = tostring(RawData.Interface),
+    ExecutionDuration = todouble(RawData.ExecutionDuration),
+    FailureReason = tostring(RawData.FailureReason),
+    TablesRead = tostring(RawData.TablesRead),
+    UserId_raw = tostring(RawData.UserId)
+| where Operation contains "Completed" or RecordType == 379
+| extend 
+    // When RecordType 403 exists, ToolName is the grouping key; otherwise use Interface
+    GroupKey = iff(RecordType == 403, coalesce(ToolName, "unknown_tool"), coalesce(Interface, "InterfaceNotProvided")),
+    IsSuccess = isempty(FailureReason) or FailureReason == "",
+    Source = iff(RecordType == 403, "MCP Tool (RecordType 403)", "Interface (RecordType 379)")
+| summarize
+    CallCount = count(),
+    SuccessCount = countif(IsSuccess),
+    FailureCount = countif(not(IsSuccess)),
+    AvgDurationSec = round(avg(ExecutionDuration), 2),
+    MaxDurationSec = round(max(ExecutionDuration), 2),
+    TablesAccessed = make_set(TablesRead, 20),
+    DistinctUsers = dcount(UserId_raw),
+    Users = make_set(UserId_raw, 10),
+    FirstSeen = min(Timestamp),
+    LastSeen = max(Timestamp)
+    by GroupKey, Source
+| extend ErrorRate = round(100.0 * FailureCount / CallCount, 1)
+| order by CallCount desc
+```
+
+### Query 14: Data Lake MCP — Error Analysis
+
+**Tool:** `RunAdvancedHuntingQuery` (uses `Timestamp` for CloudAppEvents).  
+**⚠️ Pitfall-aware:** Uses `contains`/`parse_json(tostring())` pattern — see Query 12 pitfall notes. Now groups errors by both AccessPattern (MCP vs Portal vs Jobs) and ErrorCategory for richer diagnostics.
+
+```kql
+// Analyze failed Data Lake queries — identify schema errors, permission issues, etc.
+// PRIMARY: Filters on ActionType contains "SentinelAITool" (RecordType 403) when available
+// FALLBACK: When RecordType 403 absent, analyzes all failed RecordType 379 events grouped by Interface
+CloudAppEvents
+| where Timestamp >= ago(30d)
+| where ActionType contains "Sentinel" or ActionType contains "KQL"
+| extend RawData = parse_json(tostring(RawEventData))
+| extend 
+    Operation = tostring(RawData.Operation),
+    RecordType = toint(RawData.RecordType),
+    ToolName = tostring(RawData.ToolName),
+    Interface = tostring(RawData.Interface),
+    FailureReason = tostring(RawData.FailureReason),
+    TablesRead = tostring(RawData.TablesRead),
+    UserId_raw = tostring(RawData.UserId)
+| where Operation contains "Completed" or RecordType == 379
+| where isnotempty(FailureReason) and FailureReason != ""
+| extend 
+    AccessPattern = case(
+        RecordType == 403 and Interface == "IMcpToolTemplate", "MCP Server-Driven",
+        RecordType == 379 and (Interface == "InterfaceNotProvided" or isempty(Interface)), "MCP-Driven (Probable)",
+        RecordType == 379 and Interface has "msglakeexplorer", "Portal (Data Lake Explorer)",
+        RecordType == 379 and Interface has "msgjobmanagement", "Scheduled Jobs",
+        RecordType == 379, "Other Direct KQL",
+        "Other"),
+    ErrorCategory = case(
+        FailureReason has "SemanticError", "Schema/Semantic Error",
+        FailureReason has "SyntaxError", "KQL Syntax Error",
+        FailureReason has "Unauthorized" or FailureReason has "403", "Permission Denied",
+        FailureReason has "Timeout", "Query Timeout",
+        FailureReason has "NotFound", "Table/Resource Not Found",
+        "Other Error")
+| summarize
+    ErrorCount = count(),
+    Tools = make_set(ToolName, 10),
+    Tables = make_set(TablesRead, 10),
+    Users = make_set(UserId_raw, 10),
+    SampleErrors = make_set(substring(FailureReason, 0, 150), 5),
+    FirstSeen = min(Timestamp),
+    LastSeen = max(Timestamp)
+    by AccessPattern, ErrorCategory
+| order by AccessPattern asc, ErrorCount desc
+```
+
+### Query 15: Azure MCP Server — Authentication Events (SigninLogs)
+
+**Tool:** `mcp_sentinel-data_query_lake` (90d lookback exceeds AH 30d limit).  
 **⚠️ Pitfall-aware:** Uses `parse_json(Status)`/`parse_json(DeviceDetail)` wrappers — see [SigninLogs Status Field Needs parse_json()](#signinlogs-status-field-needs-parse_json-in-data-lake). Uses `extend SignInType` to avoid `Type` pseudo-column — see [Type Column Unavailable in Data Lake Union Contexts](#type-column-unavailable-in-data-lake-union-contexts).
 
 ```kql
@@ -1440,7 +1239,7 @@ CloudAppEvents
 //
 // ⚠️ SHARED APPID: 04b07795 is the Azure CLI AppId — shared with manual 'az' CLI usage.
 // There is NO unique sign-in fingerprint for Azure MCP Server vs manual Azure CLI.
-// This query returns ALL Azure CLI sign-ins. Correlate with LAQueryLogs (Query 26)
+// This query returns ALL Azure CLI sign-ins. Correlate with LAQueryLogs (Query 16)
 // for query-level attribution via the '\n| limit N' text pattern.
 //
 // NOTE: Sign-in events represent TOKEN ACQUISITIONS, not individual API calls.
@@ -1482,7 +1281,9 @@ union signinlogs_interactive, signinlogs_noninteractive
 | order by TimeGenerated desc
 ```
 
-### Query 26: Azure MCP Server — Workspace Queries (LAQueryLogs)
+### Query 16: Azure MCP Server — Workspace Queries (LAQueryLogs)
+
+**Tool:** `mcp_sentinel-data_query_lake` (90d lookback exceeds AH 30d limit).
 
 ```kql
 // Detect Azure MCP Server workspace queries via LAQueryLogs.
@@ -1518,27 +1319,6 @@ LAQueryLogs
 
 > **Post-processing:** Rows with `HasLimitSuffix = true` are highly likely Azure MCP Server queries (the `monitor_workspace_log_query` command always appends `| limit N`). Rows without the suffix may be manual Azure CLI or other tools using the same credential.
 
-### Query 27: Azure MCP Server — AzureActivity Claims Correlation
-
-**⚠️ Pitfall-aware:** Uses `parse_json(Claims)` to extract `appid` — AzureActivity Claims is a JSON string. Only ARM write/action/delete operations appear (reads not logged). See [Azure MCP Server Detection](#azure-mcp-server-detection--updated-feb-2026).
-
-```kql
-// Check AzureActivity for Azure MCP Server write operations (read ops not logged)
-// Parse Claims.appid to identify the source application
-// 🔄 UPDATED Feb 2026: Now uses Azure CLI AppId 04b07795 (previously 1950a258)
-AzureActivity
-| where TimeGenerated >= ago(90d)
-| where CategoryValue == "Administrative"
-| extend ClaimsData = parse_json(Claims)
-| extend ClaimsAppId = tostring(ClaimsData.appid)
-| where ClaimsAppId == "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
-| project TimeGenerated, Caller, CallerIpAddress,
-    OperationNameValue, ResourceProviderValue,
-    ActivityStatusValue, ClaimsAppId,
-    ResourceGroup
-| order by TimeGenerated desc
-```
-
 ---
 
 ## Report Template
@@ -1549,33 +1329,76 @@ The inline report MUST include these sections in order:
 
 1. **Header** — Workspace, analysis period, data sources checked, MCP servers detected
 2. **Executive Summary** — 2-3 sentence overview of MCP usage posture
-3. **Graph MCP Server Analysis**
-   - Daily usage trend (ASCII bar chart showing requests/day over the period)
+3. **MCP Footprint Summary** *(SVG-critical: provides consolidated KPIs for dashboard Row 2 + Row 3)*
+   - **Server Landscape table** — one row per MCP server with: Server, API Calls, Auth Events, Distinct Users, Error Rate, Status. This table feeds the SVG `server_landscape` widget directly.
+   - **Consolidated KPI block** — aggregate totals across all servers:
+     ```
+     Total MCP API Calls: <sum of API calls across Graph + Triage + Data Lake + Azure>
+     Total Auth Events: <sum of auth events across Triage + Azure + Platform Services>
+     Distinct MCP Users: <deduplicated count or max across channels>
+     Active MCP Servers: <count of server types with >0 activity>
+     Combined MCP Query Share: <MCP queries / total workspace queries %>
+     Sensitive API Rate: <sensitive / total Graph MCP calls %>
+     ```
+   - These values are derived from Phase 1-5 query results and MUST be rendered as a single block for SVG extraction. Do not scatter them across per-server sections only.
+4. **Graph MCP Server Analysis**
+   - Daily usage trend (ASCII bar chart showing requests/day — from Query 1 unified trend, Graph MCP series)
    - Top endpoints table (endpoint, call count, % of total, last used)
    - Sensitive API access summary with user attribution
-4. **Sentinel Triage MCP Analysis**
+   - Caller attribution (User vs SPN vs Agent — from Query 9)
+5. **Sentinel Triage MCP Analysis**
    - Triage MCP API calls from `MicrosoftGraphActivityLogs` — filtered by dedicated AppId `7b7b3966` ("Microsoft Defender Mcp")
+   - Daily usage trend (ASCII bar chart showing calls/day — from Query 1 unified trend, Triage MCP series)
    - Triage MCP authentication events from `SigninLogs`/`AADNonInteractiveUserSignInLogs` — sign-in frequency, user attribution, IP, country
    - User attribution table with sign-in type breakdown
-5. **Sentinel Data Lake MCP Analysis**
+6. **Sentinel Data Lake MCP Analysis**
    - MCP tool usage summary (success/failure, avg duration)
    - Tool breakdown table (query_lake, list_sentinel_workspaces, search_tables, etc.)
    - Error analysis with error categories and sample failure reasons
-   - Daily activity trend (ASCII bar chart)
+   - Daily activity trend (ASCII bar chart — from Query 1 unified trend, Data Lake MCP series)
    - MCP vs Direct KQL delineation table
-6. **Azure MCP & ARM Analysis**
+7. **Azure MCP & ARM Analysis**
    - Azure MCP Server authentication events (detected via AppId `04b07795` — Azure CLI credential, shared AppId)
+   - Daily auth trend (ASCII bar chart showing events/day — from Query 1 unified trend, Azure MCP/CLI series)
    - Azure MCP Server workspace queries from LAQueryLogs (detected via AADClientId `04b07795` + empty `RequestClientApp` + `\n| limit N` query text suffix)
-   - ARM operation volume and resource providers accessed
+   - ARM operation volume and resource providers accessed — if no ARM write ops detected, explicitly state: "✅ No ARM write operations detected for AppId `04b07795` in the analysis period."
    - Source attribution via Claims.appid (Azure Portal, AI Studio, Power Platform connectors, etc.)
-7. **Workspace Query Governance (Two-Tier)**
+8. **Workspace Query Governance (Two-Tier)**
    - **Analytics Tier** (LAQueryLogs): All query sources table with MCP vs Portal vs Platform breakdown
    - **Data Lake Tier** (CloudAppEvents): MCP-driven vs Direct KQL breakdown
    - Combined MCP proportion across both tiers
    - Pareto analysis of query sources
-8. **MCP Usage Score** — Per-dimension breakdown with scoring rationale
-9. **Security Assessment** — Emoji-coded findings table with evidence citations
-10. **Recommendations** — Prioritized action items based on findings
+9. **Agent Identity Attribution**
+   - Caller type breakdown (Human / SPN / Agent Identity / Agent User)
+   - Agent Identity inventory (from AuditLogs + Graph API `/beta` tags) — if no agents exist: "✅ No Entra Agent Identities detected in tenant."
+   - Agent lifecycle timeline (creation, modification, deletion events)
+10. **MCP Usage Score** — Per-dimension breakdown with scoring rationale
+11. **Security Assessment** — Emoji-coded findings table with evidence citations
+12. **Recommendations** — Prioritized action items based on findings
+
+### Report Completeness Checklist
+
+**🔴 MANDATORY — Run before finalizing any report.** After composing the full report, verify each row below. Every server section (4-7) must include its Daily Trend chart derived from Query 1. Query 1 returns all 4 server series in a single union — filter by `Server` column to extract each.
+
+| # | Section | Required Sub-Section | Data Source | Check |
+|---|---------|---------------------|-------------|-------|
+| 4 | Graph MCP Server | Daily Usage Trend (ASCII bar chart) | Q1 → `Server = "Graph MCP"` | ☐ |
+| 4 | Graph MCP Server | Top Endpoints table | Q2 | ☐ |
+| 4 | Graph MCP Server | Sensitive API access summary | Q2 `IsSensitive` rows | ☐ |
+| 4 | Graph MCP Server | Caller attribution | Q9 | ☐ |
+| 5 | Sentinel Triage MCP | Daily Usage Trend (ASCII bar chart) | Q1 → `Server = "Triage MCP"` | ☐ |
+| 5 | Sentinel Triage MCP | API calls table | Q5 | ☐ |
+| 5 | Sentinel Triage MCP | Authentication events | Q6 | ☐ |
+| 6 | Data Lake MCP | Daily Activity Trend (ASCII bar chart) | Q1 → `Server = "Data Lake MCP"` | ☐ |
+| 6 | Data Lake MCP | MCP vs Direct KQL delineation | Q12 | ☐ |
+| 6 | Data Lake MCP | Tool breakdown table | Q13 | ☐ |
+| 6 | Data Lake MCP | Error analysis | Q14 | ☐ |
+| 7 | Azure MCP Server | Daily Auth Trend (ASCII bar chart) | Q1 → `Server = "Azure MCP/CLI"` | ☐ |
+| 7 | Azure MCP Server | Authentication events | Q15 | ☐ |
+| 7 | Azure MCP Server | Workspace queries (LAQueryLogs) | Q16 | ☐ |
+| 7 | Azure MCP Server | AzureActivity write operations | Q17 (or explicit "none found") | ☐ |
+
+If any checkbox cannot be checked, either the data was missing (state why — e.g., "Q1 returned 0 rows for this server") or the section was accidentally omitted. **Do not finalize the report with unchecked boxes unless the data genuinely does not exist.**
 
 ### Report Visualization Patterns
 
@@ -1644,7 +1467,7 @@ groups                        █████         11   (7.2%)
 
 When outputting to markdown file, include everything from the inline format PLUS:
 
-```markdown
+````markdown
 # MCP Server Usage Monitoring Report
 
 **Generated:** YYYY-MM-DD HH:MM UTC
@@ -1657,6 +1480,30 @@ When outputting to markdown file, include everything from the inline format PLUS
 ## Executive Summary
 
 <2-3 sentence summary: MCP servers detected, total usage volume, risk level, key findings>
+
+---
+
+## MCP Footprint Summary
+
+### Server Landscape
+| MCP Server | API Calls | Auth Events | Distinct Users | Error Rate | Status |
+|------------|----------:|------------:|---------------:|-----------:|--------|
+| Graph MCP | ... | — | ... | ...% | ✅/🟡/🟠/🔴 |
+| Triage MCP | ... | ... | ... | ...% | ✅/🟡/🟠/🔴 |
+| Data Lake MCP | ... | — | ... | ...% | ✅/🟡/🟠/🔴 |
+| Azure MCP/CLI | — | ... | ... | ...% | ✅/🟡/🟠/🔴 |
+
+### Consolidated KPIs
+| Metric | Value |
+|--------|------:|
+| Total MCP API Calls | X,XXX |
+| Total Auth Events | X,XXX |
+| Distinct MCP Users | XXX |
+| Active MCP Servers | N of 4 |
+| Combined MCP Query Share | X.X% |
+| Sensitive API Rate | X.X% |
+
+> **SVG Note:** These KPIs map directly to Row 2 KPI cards and the Server Landscape maps to Row 3 table widget. Render this section before per-server deep dives to enable incremental SVG generation.
 
 ---
 
@@ -1677,6 +1524,13 @@ When outputting to markdown file, include everything from the inline format PLUS
 | ... | ... | ... | ... | ... |
 
 **Summary:** X of Y calls (Z%) targeted sensitive endpoints. <Risk assessment>.
+
+### Caller Attribution (Query 9)
+| Caller Type | Auth Method | Users | Calls | Success Rate |
+|-------------|-------------|------:|------:|-------------:|
+| 👤 User (Delegated) | ... | ... | ... | ...% |
+| 🤖 Service Principal | ... | ... | ... | ...% |
+| 🤖🔵 Agent Identity | ... | ... | ... | ...% |
 
 ---
 
@@ -1730,21 +1584,27 @@ When outputting to markdown file, include everything from the inline format PLUS
 
 ### Authentication Timeline
 | Timestamp | Resource | Result | Auth Type | UserAgent | Notes |
-|-----------|----------|--------|-----------|-----------|-------|\n| ... | ... | ... | ... | ... | ... |
+|-----------|----------|--------|-----------|-----------|-------|
+| ... | ... | ... | ... | ... | ... |
 
 ### Workspace Queries (LAQueryLogs)
 | Timestamp | Query (truncated) | Response | CPU (ms) | Source App |
-|-----------|-------------------|----------|----------|------------|\n| ... | ... | ... | ... | ... |
+|-----------|-------------------|----------|----------|------------|
+| ... | ... | ... | ... | ... |
 
 ### AzureActivity Write Operations
 | Timestamp | Operation | Resource Provider | Status | Claims.appid |
-|-----------|-----------|-------------------|--------|-------------|\n| ... | ... | ... | ... | `04b07795` |
+|-----------|-----------|-------------------|--------|-------------|
+| ... | ... | ... | ... | `04b07795` |
+
+> If no ARM write operations found, state: "✅ No ARM write operations detected for AppId `04b07795` in the analysis period. ARM read operations are not logged in AzureActivity."
 
 ---
 
 ## Azure ARM Operations (All Sources)
 
-> **Source Attribution:** ARM operations attributed via `Claims.appid` in AzureActivity.\n> Azure MCP Server read-only operations NOT logged in AzureActivity.
+> **Source Attribution:** ARM operations attributed via `Claims.appid` in AzureActivity.
+> Azure MCP Server read-only operations NOT logged in AzureActivity.
 
 ### ARM Source Attribution
 | AppId | App Name | Calls | Operations |
@@ -1800,10 +1660,9 @@ MCP queries represent X% of combined query volume:
 | ... | ... | ... | `AgenticApp`, `AgentCreatedBy:CopilotStudio` | Power Virtual Agents Service | YYYY-MM-DD | Active/Deleted | Bot Framework |
 
 ### Agent Lifecycle Timeline
-```
-<Date> <Time>  ── <Agent Name> ── <Operation> (by <InitiatedBy>)
-                   └── <Context notes>
-```
+
+    <Date> <Time>  ── <Agent Name> ── <Operation> (by <InitiatedBy>)
+                       └── <Context notes>
 
 > **Detection Method (Field-Tested):**
 > 1. `AuditLogs` → filter for `OperationName has "agent"` or `InitiatedBy = "Power Virtual Agents Service"` or `TargetResources has "Copilot Studio"`
@@ -1850,12 +1709,12 @@ Render a single markdown table summarizing all queries executed. **Do NOT includ
 
 | Query | Table(s) | Records Scanned | Results | Execution |
 |-------|----------|----------------:|--------:|----------:|
-| Q1 — Graph MCP Daily Usage | MicrosoftGraphActivityLogs | X,XXX | N rows | X.XXs |
-| Q2 — Top Graph Endpoints | MicrosoftGraphActivityLogs | X,XXX | N rows | X.XXs |
+| Q1 — Unified Daily MCP Activity Trend | MicrosoftGraphActivityLogs, CloudAppEvents, SigninLogs, AADNonInteractive, LAQueryLogs | X,XXX | N rows | X.XXs |
+| Q2 — Graph MCP Endpoint & Activity Summary | MicrosoftGraphActivityLogs | X,XXX | N rows | X.XXs |
 | ... | ... | ... | ... | ... |
 
 *Query definitions: see the Sample KQL Queries section in this SKILL.md file.*
-```
+````
 
 ---
 
@@ -1869,7 +1728,7 @@ This skill provides **on-demand visibility** (Phases 1-7 above). For **continuou
 
 | Tier | Capability | Implementation |
 |------|-----------|----------------|
-| **1. Visibility** (current skill) | On-demand MCP usage reports via Copilot chat | This SKILL.md — Phases 1-7, Queries 1-27 |
+| **1. Visibility** (current skill) | On-demand MCP usage reports via Copilot chat | This SKILL.md — Phases 1-7, Queries 1-16 |
 | **2. Baselining** | 14-day behavioral baselines per user per MCP server | KQL Jobs 1-8 build baselines automatically |
 | **3. Alerting** | Automated anomaly detection → Sentinel incidents | KQL Jobs promote to `_KQL_CL` tables → Analytics Rules fire |
 | **4. Enforcement** | Real-time guardrails, scope limits (future) | Not yet available — requires MCP protocol-level controls |
@@ -1908,6 +1767,10 @@ For full query definitions, deployment checklist, and companion analytics rule t
 ---
 
 ## Known Pitfalls
+
+### `project ... as` Keyword Fails in Advanced Hunting
+**Problem:** The `as` keyword for column aliasing inside `project` (e.g., `tostring(parse_json(Status).errorCode) as ErrorCode`) fails in Advanced Hunting with `Query could not be parsed at 'as'`. While `as` is valid KQL in Log Analytics / Data Lake, the AH parser rejects it inside `project` statements.  
+**Solution:** Always use `=` assignment syntax instead: `ErrorCode = tostring(parse_json(Status).errorCode)`. This works in both AH and Data Lake. All queries in this skill have been updated to use `=` syntax. When writing new queries, never use `as` for column aliasing in `project` — reserve `as` for tabular expression naming (`let T = ... | as T`).
 
 ### Agent Identity vs Standard SPN Ambiguity
 **Problem:** `MicrosoftGraphActivityLogs` does NOT yet distinguish Agent Identities from standard SPNs. Both appear in the `ServicePrincipalId` field with no subtype indicator. Agent Users appear in `UserId` indistinguishably from human users. Additionally, `servicePrincipalType` still returns `"Application"` even for confirmed Copilot Studio agents — the `"Agent"` subtype is not yet populated (as of Feb 2026). This is a [documented known limitation](https://learn.microsoft.com/en-us/entra/agent-id/identity-platform/preview-known-issues#monitoring-and-logs) of the Entra Agent ID preview.  
@@ -1968,7 +1831,7 @@ For full query definitions, deployment checklist, and companion analytics rule t
 | where ActionType has "Sentinel" or ActionType has "KQL"
 | where Operation has "Completed"  // Returns 0 rows — silently drops ALL MCP events!
 ```
-**Impact if missed:** Query 20 (MCP vs Direct KQL delineation) will show 0 MCP events and ONLY Direct KQL — because MCP events (RecordType 403) are filtered out by `Operation has "Completed"`, while Direct KQL events (RecordType 379) survive via the `OR RecordType == 379` fallback. This creates a false impression that no MCP-driven queries exist.
+**Impact if missed:** Query 12 (MCP vs Direct KQL delineation) will show 0 MCP events and ONLY Direct KQL — because MCP events (RecordType 403) are filtered out by `Operation has "Completed"`, while Direct KQL events (RecordType 379) survive via the `OR RecordType == 379` fallback. This creates a false impression that no MCP-driven queries exist.
 
 ### CloudAppEvents RawEventData Parsing
 **Problem:** `RawEventData` in `CloudAppEvents` is a dynamic column but often contains nested JSON that requires double-parsing. Direct property access (e.g., `RawEventData.ToolName`) may return empty.  
@@ -1998,15 +1861,19 @@ For full query definitions, deployment checklist, and companion analytics rule t
 
 ### SigninLogs `Status` Field Needs `parse_json()` in Data Lake
 **Problem:** The `Status` column in `SigninLogs` / `AADNonInteractiveUserSignInLogs` is a dynamic field containing `{errorCode, failureReason, additionalDetails}`, but Data Lake workspaces may store it as a **string**. Using dot-notation (`Status.errorCode`) without `parse_json()` causes parser errors (`Expected: ;`) or SemanticErrors.  
-**Solution:** Always use `tostring(parse_json(Status).errorCode)` — same pattern as `DeviceDetail`, `LocationDetails`, and `ConditionalAccessPolicies`. This works regardless of whether the column is stored as dynamic or string. Query 5 was fixed for this in Feb 2026.
+**Solution:** Always use `tostring(parse_json(Status).errorCode)` — same pattern as `DeviceDetail`, `LocationDetails`, and `ConditionalAccessPolicies`. This works regardless of whether the column is stored as dynamic or string. Query 3 was fixed for this in Feb 2026.
 
 ### `Type` Column Unavailable in Data Lake Union Contexts
 **Problem:** The `Type` pseudo-column (table name) is **NOT resolvable** in `union` queries executed via Sentinel Data Lake. Using `summarize by Type` in a `union SigninLogs, AADNonInteractiveUserSignInLogs` query fails with `SemanticError: Failed to resolve scalar expression named 'Type'`.  
-**Solution:** When you need to distinguish source tables in a union, add `| extend TableName = "SigninLogs"` (or `"AADNonInteractive"`) within each union leg before the union operator. Then `summarize by TableName`. This is already handled in Query 25 via the `SignInType` field pattern (`extend SignInType = "Interactive"` / `"Non-Interactive"`), but ad-hoc summary variants must use the `extend` approach — never `Type`.
+**Solution:** When you need to distinguish source tables in a union, add `| extend TableName = "SigninLogs"` (or `"AADNonInteractive"`) within each union leg before the union operator. Then `summarize by TableName`. This is already handled in Query 15 via the `SignInType` field pattern (`extend SignInType = "Interactive"` / `"Non-Interactive"`), but ad-hoc summary variants must use the `extend` approach — never `Type`.
 
 ### Non-Interactive Sign-In Noise
 **Problem:** `AADNonInteractiveUserSignInLogs` may contain Logic Apps connector activity (`de8c33bb`) that looks like user activity but is automated.  
 **Solution:** When reporting Sentinel MCP auth events from SigninLogs, distinguish interactive (user-initiated) from non-interactive (automated) sources. The LogicApps connector is NOT MCP — exclude it from MCP auth counts.
+
+### `AADNonInteractiveUserSignInLogs` Commonly on Data Lake Tier
+**Problem:** Many customers place `AADNonInteractiveUserSignInLogs` on Data Lake (or Basic) tier. When this table is NOT on Analytics tier, any Advanced Hunting query that unions `SigninLogs` + `AADNonInteractiveUserSignInLogs` fails with `MPC -32600: The query should contain a single Basic or Auxiliary table` or silently returns incomplete/unsorted data. This affects Query 1 (daily trend) and Query 6 (Triage MCP auth) in this skill.  
+**Solution:** All queries that union `SigninLogs` + `AADNonInteractiveUserSignInLogs` in this skill MUST use `mcp_sentinel-data_query_lake` instead of `RunAdvancedHuntingQuery`. Data Lake handles cross-table unions natively and works regardless of which tier each table is on. When running via Data Lake, `CloudAppEvents` uses `TimeGenerated` (not `Timestamp` as in AH). Queries 1, 6, and 15 are already configured for Data Lake.
 
 ### Off-Hours Timezone Uncertainty
 **Problem:** `TimeGenerated` is always UTC, but "off-hours" has different meaning depending on the user's timezone. A UTC 06:00 call might be 22:00 local or 14:00 local.  
@@ -2018,7 +1885,7 @@ For full query definitions, deployment checklist, and companion analytics rule t
 
 ### Agent User UPNs Masquerading as Human Users
 **Problem:** Agent Users are assigned UPNs and appear in `UserId` fields identically to human users. Without checking the account type, an agent user's MCP activity would be reported as human activity.  
-**Solution:** When the MCP Usage Score flags unexpected user diversity or new users (Query 12), cross-reference the `UserId` with Entra to check if the user object is an Agent User (`userType` and account metadata). Agent Users created by Copilot Studio or Agent Identity Blueprints will have specific metadata distinguishing them from workforce accounts.
+**Solution:** When the MCP Usage Score flags unexpected user diversity or new users, cross-reference the `UserId` with Entra to check if the user object is an Agent User (`userType` and account metadata). Agent Users created by Copilot Studio or Agent Identity Blueprints will have specific metadata distinguishing them from workforce accounts.
 
 ### Rate Limiting Not Visible in Logs
 **Problem:** Graph MCP Server is capped at 100 calls/min/user. If throttled, calls may not appear in logs (no log entry = no visibility).  
@@ -2026,7 +1893,7 @@ For full query definitions, deployment checklist, and companion analytics rule t
 
 ### SentinelAudit Table Availability
 **Problem:** `SentinelAudit` requires Sentinel auditing and health monitoring to be enabled. It may not exist in all workspaces.  
-**Solution:** If `SentinelAudit` returns table-not-found, skip Query 15 gracefully. Report: "⚠️ Sentinel auditing not enabled — cannot check configuration changes."
+**Solution:** If `SentinelAudit` returns table-not-found, skip gracefully. Report: "⚠️ Sentinel auditing not enabled — cannot check configuration changes."
 
 ---
 
@@ -2036,11 +1903,13 @@ For full query definitions, deployment checklist, and companion analytics rule t
 
 | Issue | Solution |
 |-------|----------|
+| `project ... as ErrorCode` fails in AH | Advanced Hunting rejects `as` keyword in `project`. Use `=` syntax: `ErrorCode = tostring(...)`. See Known Pitfalls. |
+| `MPC -32600` error from Triage MCP | Transient error — retry once. If persistent, fall back to `mcp_sentinel-data_query_lake`. |
 | `MicrosoftGraphActivityLogs` table not found | Graph activity logs not enabled. Report gap, skip Graph MCP analysis, provide enablement link. |
 | `LAQueryLogs` table not found | Diagnostic settings not configured on LA workspace. Report gap, skip governance analysis. |
 | `SentinelAudit` table not found | Sentinel health monitoring not enabled. Report gap, skip config change analysis. |
 | `AzureActivity` returns 0 results | No ARM operations in the time range, or no administrative actions by the specified user. |
-| Agent Identity query returns empty | Entra Agent ID not enabled or no agents registered. Report gap as "✅ No Agent Identities detected", skip Queries 18-19. |
+| Agent Identity query returns empty | Entra Agent ID not enabled or no agents registered. Report gap as "✅ No Agent Identities detected", skip Queries 10-11. |
 | `AADServicePrincipalSignInLogs` missing agent subtype | Agent ID preview may not be active. Agent SPNs will appear as regular SPNs. Note limitation. |
 | SPN `servicePrincipalType` shows `Application` for known agents | Expected behavior as of Feb 2026. Copilot Studio agents still report as `Application`. Use `/beta` `tags` array instead (`AgenticApp`, `AgentCreatedBy:CopilotStudio`). |
 | Agent sign-ins show Azure internal IPv6 (`fd00:*`) | Expected for Copilot Studio agents — they authenticate from Azure infrastructure. Not a concern. |
@@ -2080,7 +1949,7 @@ Before presenting results, verify:
 - [ ] AppId cross-reference table is included for any unknown AppIds discovered
 - [ ] The MCP Usage Score calculation is transparent with per-dimension evidence
 - [ ] All ASCII visualizations are wrapped in code fences for markdown compatibility
-- [ ] Agent Identity detection was attempted (Query 17 for caller attribution, Query 19 for CRUD lifecycle, Graph API `/beta` tags for classification)
+- [ ] Agent Identity detection was attempted (Query 9 for caller attribution, Query 11 for CRUD lifecycle, Graph API `/beta` tags for classification)
 - [ ] Graph API cross-reference used `/beta` endpoint with `tags` property — NOT `servicePrincipalType` alone (which is unreliable)
 - [ ] Agent classification based on tags (`AgenticApp`, `AgentCreatedBy:CopilotStudio`), NOT display name
 - [ ] If Agent Identities found: reported separately from human users and standard SPNs, with lifecycle timeline
@@ -2094,13 +1963,13 @@ For complete MCP server monitoring, ensure these data sources are enabled:
 
 | Data Source | Enabling Documentation | Required For |
 |-------------|----------------------|--------------|
-| **Microsoft Graph activity logs** | [Enable Graph activity logs](https://learn.microsoft.com/en-us/graph/microsoft-graph-activity-logs-overview) | Graph MCP analysis (Queries 1-4, 11-12, 17) |
-| **CloudAppEvents (Purview unified audit)** | Requires M365 E5 license; enable [Sentinel Data Lake auditing](https://learn.microsoft.com/en-us/azure/sentinel/datalake/auditing-lake-activities) | Data Lake MCP analysis (Queries 20-24) |
-| **Sentinel auditing and health monitoring** | [Enable Sentinel monitoring](https://learn.microsoft.com/en-us/azure/sentinel/enable-monitoring) | Config change detection (Query 15) |
-| **LAQueryLogs (diagnostic settings)** | Configure diagnostic settings on LA workspace | Workspace governance (Queries 7, 10, 13-14, 16) |
-| **AzureActivity** | Enabled by default for ARM operations | Azure MCP analysis (Queries 8-9) |
-| **SigninLogs** | Entra ID diagnostic settings | Sentinel MCP auth events (Queries 5-6) |
-| **Purview audit logs** | Included with E5 license | CloudAppEvents ingestion — required for Data Lake MCP monitoring (Queries 20-24). RecordType 403 (AI Tool) and 379 (KQL) |
+| **Microsoft Graph activity logs** | [Enable Graph activity logs](https://learn.microsoft.com/en-us/graph/microsoft-graph-activity-logs-overview) | Graph MCP analysis (Queries 1-2, 5, 9) |
+| **CloudAppEvents (Purview unified audit)** | Requires M365 E5 license; enable [Sentinel Data Lake auditing](https://learn.microsoft.com/en-us/azure/sentinel/datalake/auditing-lake-activities) | Data Lake MCP analysis (Queries 12-14) |
+| **Sentinel auditing and health monitoring** | [Enable Sentinel monitoring](https://learn.microsoft.com/en-us/azure/sentinel/enable-monitoring) | Config change detection (ad-hoc SentinelAudit queries) |
+| **LAQueryLogs (diagnostic settings)** | Configure diagnostic settings on LA workspace | Workspace governance (Queries 7, 8, 16) |
+| **AzureActivity** | Enabled by default for ARM operations | Azure MCP analysis (ad-hoc ARM queries) |
+| **SigninLogs** | Entra ID diagnostic settings | Sentinel MCP auth events (Queries 3-4, 6, 15) |
+| **Purview audit logs** | Included with E5 license | CloudAppEvents ingestion — required for Data Lake MCP monitoring (Queries 12-14). RecordType 403 (AI Tool) and 379 (KQL) |
 
 If any prerequisite is not met, the skill will report the gap and skip the affected analysis sections.
 
@@ -2120,3 +1989,79 @@ If any prerequisite is not met, the skill will report the gap and skip the affec
 - **Fabric RTI MCP:** [Fabric RTI MCP overview](https://learn.microsoft.com/en-us/fabric/real-time-intelligence/mcp-overview) | [GitHub](https://github.com/microsoft/fabric-rti-mcp/)
 - **Playwright MCP:** [GitHub](https://github.com/microsoft/playwright-mcp) — Browser automation MCP (26.9k ⭐, local only)
 - **Entra Agent ID docs:** [What are agent identities](https://learn.microsoft.com/en-us/entra/agent-id/identity-platform/what-is-agent-id) | [Agent sign-in logs](https://learn.microsoft.com/en-us/entra/agent-id/identity-professional/sign-in-audit-logs-agents) | [Agent OAuth protocols](https://learn.microsoft.com/en-us/entra/agent-id/identity-platform/agent-oauth-protocols) | [Known issues](https://learn.microsoft.com/en-us/entra/agent-id/identity-platform/preview-known-issues)
+
+---
+
+## SVG Dashboard Generation
+
+> 📊 **Optional post-report step.** After an MCP Usage report is generated, the user can request a visual SVG dashboard.
+
+**Trigger phrases:** "generate SVG dashboard", "create a visual dashboard", "visualize this report", "SVG from the report"
+
+### User Guide — How to Request a Dashboard
+
+**Scenario A — Same chat session (report was just generated):**
+
+Simply ask:
+```
+Generate an SVG dashboard from the report
+```
+Copilot already has the report data in context and will produce the SVG immediately.
+
+**Scenario B — New chat (report already exists as a file):**
+
+Attach or reference the report file:
+```
+Generate an SVG dashboard from the MCP usage report
+#file:reports/mcp-usage/MCP_Usage_Report_<workspace>_<date>.md
+```
+Or drag the report file into chat. Copilot will read the file and generate the dashboard.
+
+**Scenario C — Customization:**
+
+Edit [svg-widgets.yaml](svg-widgets.yaml) before requesting the dashboard. Then ask as above — the renderer reads the YAML at generation time, so changes take effect immediately.
+
+### How It Works (Internal)
+
+1. **Widget manifest:** [svg-widgets.yaml](svg-widgets.yaml) defines the dashboard layout — rows, widgets, data field mappings, color palette, and per-server colors.
+2. **Shared renderer:** [.github/skills/svg-dashboard/SKILL.md](../svg-dashboard/SKILL.md) contains the rendering rules for all widget types (Manifest Mode).
+3. **Data source:** The completed report markdown provides the actual values.
+
+### Execution
+
+When the user asks for an SVG dashboard after a report run:
+
+```
+Step 1:  Read svg-widgets.yaml (this skill's widget manifest)
+Step 2:  Read .github/skills/svg-dashboard/SKILL.md (rendering rules — Manifest Mode)
+Step 3:  Read the completed report file (data source)
+         — If same chat: report data is already in context
+         — If new chat: read the file path provided by user or find latest in reports/mcp-usage/
+Step 4:  Render SVG → save to reports/mcp-usage/{report_name}_dashboard.svg
+```
+
+### Dashboard Layout (8 Rows)
+
+| Row | Content |
+|-----|----------|
+| **1. Title Bar** | Report title, workspace, date range |
+| **2. Score + KPIs** | MCP Usage Score gauge (0–100 with Healthy/Elevated/Concerning/Critical zones), Total API Calls, Auth Events, Distinct Users, Active Servers, MCP Query Share %, Sensitive API Rate |
+| **3. Score Breakdown + Landscape** | Score dimension bars (5 dimensions × score/20), Cross-server summary table (calls, auth, users, error rate, status per server) |
+| **4. Server Deep Dives** | Graph MCP top endpoints (with sensitive flags), Data Lake MCP tool breakdown (with error overlay), MCP vs Direct KQL donut |
+| **5. Trends + Governance** | Multi-series daily activity trend (one line per server, dormancy shading), Workspace query sources (all sources with MCP highlighted) |
+| **6. Users + Auth** | Top MCP users table, Auth by client app bars, Error hotspots table |
+| **7. Recommendations** | Priority recommendation cards (High/Medium/Low) |
+| **8. Assessment** | Security assessment banner (critical findings, warnings, positives), Key findings table |
+
+### Customization
+
+The YAML manifest controls everything:
+
+| What to Change | Where in YAML | Example |
+|----------------|---------------|---------|
+| Add/remove a KPI card | `rows[1].widgets` | Remove "Sensitive API Rate" card |
+| Change server colors | `server_colors` section | Make Triage MCP blue instead of green |
+| Reorder rows | Move row blocks up/down | Put assessment before recommendations |
+| Change color scheme | `palette` section | Swap to a different theme |
+| Show more/fewer users | Widget's `max_items` | Change top users from 10 → 5 |
+| Add a new widget row | Append a new `- id:` block | Add an "Agent Identity" panel |
