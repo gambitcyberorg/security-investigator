@@ -51,7 +51,7 @@ copy .vscode\mcp.json.template .vscode\mcp.json
 │            (Skill detection, universal patterns, routing)          │
 ├────────────────────────────────────────────────────────────────────┤
 │                     .github/skills/*.md                            │
-│       (19 specialized workflows with KQL, risk assessment)         │
+│       (20 specialized workflows with KQL, risk assessment)         │
 ├────────────────────────────────────────────────────────────────────┤
 │                     MCP Servers (Platform)                         │
 │  ┌─────────────┐  ┌──────────────┐  ┌───────────────────────────┐  │
@@ -246,13 +246,14 @@ security-investigator/
 ├── requirements.txt             # Python dependencies
 ├── .github/
 │   ├── copilot-instructions.md  # Skill detection, universal patterns, routing
-│   └── skills/                  # 19 Agent Skills (modular investigation workflows)
+│   └── skills/                  # 20 Agent Skills (modular investigation workflows)
 │       ├── ai-agent-posture/
 │       ├── authentication-tracing/
 │       ├── ca-policy-investigation/
 │       ├── computer-investigation/
 │       ├── data-security-analysis/
 │       ├── detection-authoring/
+│       ├── exposure-investigation/
 │       ├── geomap-visualization/
 │       ├── heatmap-visualization/
 │       ├── honeypot-investigation/
@@ -260,11 +261,12 @@ security-investigator/
 │       ├── ioc-investigation/
 │       ├── kql-query-authoring/
 │       ├── mcp-usage-monitoring/
-│       ├── sentinel-ingestion-report/
 │       ├── scope-drift-detection/
 │       │   ├── spn/              # Service principal drift (5 dimensions)
 │       │   ├── user/             # User account drift (7+6 dimensions)
 │       │   └── device/           # Device process drift (5 dimensions)
+│       ├── sentinel-ingestion-report/
+│       ├── svg-dashboard/
 │       └── user-investigation/
 ├── queries/                     # Verified KQL query library (grep-searchable, by data domain)
 │   ├── identity/               # Entra ID / Azure AD identity queries
@@ -278,13 +280,15 @@ security-investigator/
 │   └── sentinel-incident-comment/
 ├── docs/                        # Setup guides and reference documentation
 ├── reports/                     # Generated investigation reports (organized by type)
-│   ├── user-investigations/    # HTML user investigation reports
-│   ├── honeypot/               # Honeypot executive reports
-│   ├── scope-drift/            # Scope drift analysis reports
-│   ├── mcp-usage/              # MCP usage monitoring reports
-│   ├── exposure/               # Exposure management reports
+│   ├── ai-agent-posture/       # AI agent security posture reports
+│   ├── computer-investigations/ # Device security investigation reports
 │   ├── data-security/          # Data security SIT analysis reports
-│   └── ingestion/              # Sentinel ingestion & cost analysis reports
+│   ├── exposure/               # Exposure management reports
+│   ├── honeypot/               # Honeypot executive reports
+│   ├── mcp-usage/              # MCP usage monitoring reports
+│   ├── scope-drift/            # Scope drift analysis reports
+│   ├── sentinel/               # Sentinel ingestion & cost analysis reports
+│   └── user-investigations/    # HTML user investigation reports
 ├── temp/                        # Investigation JSON files (auto-cleaned after 3 days)
 └── archive/                     # Legacy code and design docs
 ```
