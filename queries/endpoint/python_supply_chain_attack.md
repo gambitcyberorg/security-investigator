@@ -1205,7 +1205,7 @@ The litellm attack directly illustrates the risk of self-hosted MCP servers with
 | PyPI supply chain | 🔴 Full exposure — you own the dependency tree | ✅ Not applicable — no user-managed Python |
 | Dependency management | 🔴 Your team patches, pins, audits | ✅ Vendor owns patching and SBOMs |
 | .pth startup hooks | 🔴 Python runtime risk on every install | ✅ No local Python interpreter needed |
-| Credential exposure | � API keys, secrets in `.env` files and env vars — prime exfil targets | 🟢 OAuth / Entra ID auth — no stored credentials on disk |
+| Credential exposure | 🔴 API keys, secrets in `.env` files and env vars — prime exfil targets | 🟢 OAuth / Entra ID auth — no stored credentials on disk |
 | Patching cadence | 🟠 Depends on your CI/CD | ✅ Vendor SLA |
 | Incident response | 🔴 Your team scopes and remediates | 🟢 Shared responsibility with vendor |
 | Customizability | 🟢 Fully customizable | 🟡 Limited to vendor's API surface |
