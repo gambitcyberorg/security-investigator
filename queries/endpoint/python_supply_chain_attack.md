@@ -1191,3 +1191,94 @@ If any of the above queries return positive results:
 - Check for persistence artifacts: `~/.config/sysmon/` directory, systemd user services
 - If K8s: enumerate `node-setup-*` pods in `kube-system` namespace
 - Document all rotated credentials and rotation timestamps
+
+---
+
+## Mitigations & Customer Guidance
+
+### 1. MCP Architecture: Vendor-Hosted vs Self-Built
+
+The litellm attack directly illustrates the risk of self-hosted MCP servers with transitive Python dependencies. Cursor and Claude Code users running MCP servers via `uvx` with unpinned litellm deps auto-downloaded the compromised version — the MCP server itself became the attack vector.
+
+| Risk | Self-Built MCP | Vendor-Hosted MCP |
+|------|---------------|-------------------|
+| PyPI supply chain | 🔴 Full exposure — you own the dependency tree | ✅ Not applicable — no user-managed Python |
+| Dependency management | 🔴 Your team patches, pins, audits | ✅ Vendor owns patching and SBOMs |
+| .pth startup hooks | 🔴 Python runtime risk on every install | ✅ No local Python interpreter needed |
+| Credential exposure | 🟠 Env vars, files on build host | 🟢 Managed identity / OAuth flows |
+| Patching cadence | 🟠 Depends on your CI/CD | ✅ Vendor SLA |
+| Incident response | 🔴 Your team scopes and remediates | 🟢 Shared responsibility with vendor |
+| Customizability | 🟢 Fully customizable | 🟡 Limited to vendor's API surface |
+
+**Key point:** Microsoft-hosted MCP servers (Sentinel, Graph, Azure, KQL Search, Learn) have zero user-managed Python dependencies. You consume a service endpoint — Microsoft owns the supply chain. For most security tooling use cases, this eliminates an entire threat class without meaningful functionality loss.
+
+### 2. Dependency Pinning and Lock Files
+
+88% of the 2,337 packages that depend on litellm had version specs that accepted the malicious release. CI/CD pipelines pulling `latest` got compromised within minutes.
+
+**Mitigations:**
+- **Pin exact versions**: `litellm==1.82.6` not `litellm>=1.80`
+- **Use lock files** (`pip-compile`, `poetry.lock`, `uv.lock`) that capture the full dependency graph with hashes
+- **Verify hashes**: `pip install --require-hashes -r requirements.txt`
+- **Private PyPI mirrors** with approval gates (Azure Artifacts, Artifactory) — the 46-minute window between upload and quarantine is enough to poison a cache
+- **Artifact signing**: PyPI now supports Sigstore attestations — verify them in pipelines
+
+### 3. Python Runtime Hardening
+
+The `.pth` file executes code on ANY Python interpreter startup — not just litellm imports. Most organizations don't monitor `site-packages` directories.
+
+**Mitigations:**
+- **Audit `.pth` files**: `find / -name "*.pth" -exec grep -l "import" {} \;` — legitimate `.pth` files rarely contain `import` statements
+- **Set `PYTHONNOUSERSITE=1`** in production to prevent user site-packages from loading
+- **Container isolation**: Run Python workloads in minimal containers (distroless/Alpine) with read-only filesystems — the malware writes to `~/.config/sysmon/` which fails on read-only
+- **Monitor Python process counts**: The .pth fork bomb bug created hundreds of processes per minute (Query 24 detects this)
+
+### 4. Credential Hygiene (Blast Radius Reduction)
+
+Even if the malware executes, limit what it can steal:
+
+| Mitigation | What It Prevents |
+|------------|-----------------|
+| **Managed identities** instead of stored credentials | Env var harvesting finds nothing — no `AWS_SECRET_ACCESS_KEY` on disk |
+| **Workload Identity Federation** (Azure/AWS/GCP) | No long-lived tokens on disk to exfiltrate |
+| **Secret managers** (Key Vault, AWS Secrets Manager) | Secrets fetched at runtime, never written to `.env` files |
+| **Short-lived tokens** (< 1 hour) | Stolen tokens expire before attacker can use them |
+| **K8s bound service account tokens** | Default tokens are cluster-wide — bound tokens scope to namespace/audience |
+| **SSH certificate-based auth** | No `id_rsa` private key to steal — certs expire automatically |
+| **Git Credential Manager** over `.git-credentials` | No plaintext credentials on disk |
+| **Docker credential helpers** over `~/.docker/config.json` | No plaintext registry tokens |
+
+**Principle:** *Assume the workstation will eventually be compromised. When the malware runs `cat ~/.aws/credentials`, does it find anything?*
+
+### 5. CI/CD Pipeline Hardening
+
+46,996 downloads in 46 minutes — most were automated pipelines, not humans.
+
+- **Never `pip install` without a lock file** in production builds (Query 15 hunts for this)
+- **Use `--no-deps`** when you control the dependency tree and install deps from your lock file
+- **Separate build and runtime environments** — build containers should never have access to production secrets, K8s tokens, or cloud credentials
+- **Network segmentation** — build environments should have restricted egress (allow PyPI/npm registries, deny everything else)
+- **Ephemeral build agents** — destroy after each build, preventing persistence mechanisms from surviving
+
+### 6. Detection Requirements
+
+What to have in place BEFORE the next supply chain attack:
+
+| Capability | Purpose | Coverage |
+|------------|---------|----------|
+| **MDE on developer workstations** | Process, file, network telemetry | Queries 1–29 in this pack |
+| **DNS logging** (ASIM-normalized) | C2 domain resolution detection | Queries 6, 7, 8, 18, 19 |
+| **Process command line auditing** | `pip install`, `uvx`, `kubectl` with full arguments | Queries 1, 2, 15, 23, 25 |
+| **File integrity monitoring on `site-packages/`** | `.pth` file creation alerts | Queries 3, 4 |
+| **Network monitoring for Python outbound** | Unusual POST destinations | Queries 5, 9, 20, 27 |
+| **Container/K8s audit logging** | Privileged pod creation, secret enumeration | Query 23 |
+
+### 7. The "46-Minute Window" Problem
+
+The malicious version was live for 46 minutes before PyPI quarantined it. 46,996 downloads occurred. No scanner, advisory, or security tool caught it in time.
+
+**Implications:**
+- **Reactive security** (CVE scanning, advisory monitoring) is insufficient for supply chain attacks — the advisory comes *after* the damage
+- **Proactive controls** (pinning, lock files, private mirrors, managed identities) are the only reliable preventive defense
+- **Detection in depth** (this query pack) provides the forensic capability to scope impact after the fact
+- **Vendor-hosted services** remove this entire attack class from your threat model for that component
