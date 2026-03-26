@@ -3,7 +3,7 @@
 # This file pins exact versions with SHA-256 hashes to prevent supply chain attacks.
 # Install with: pip install --require-hashes -r requirements.lock
 #
-# Generated: 2026-03-26
+# Generated: 2026-03-26 (updated to latest versions)
 # Python: 3.12 (Windows x64)
 #
 # To update:
@@ -19,8 +19,8 @@
 
 # --- Direct dependencies ---
 
-requests==2.32.4 \
-    --hash=sha256:27babd3cda2a6d50b30443204ee89830707d396671944c998b5975b031ac2b2c
+requests==2.33.0 \
+    --hash=sha256:3324635456fa185245e24865e810cecec7b4caf933d7eb133dcde67d48cee69b
 
 python-dateutil==2.9.0.post0 \
     --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
@@ -28,25 +28,25 @@ python-dateutil==2.9.0.post0 \
 python-dotenv==1.2.2 \
     --hash=sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a
 
-pytz==2024.2 \
-    --hash=sha256:31c7c1817eb7fae7ca4b8c7ee50c72f93aa2dd863de768e1ef4245d426aa0725
+pytz==2026.1.post1 \
+    --hash=sha256:f2fd16142fda348286a75e1a524be810bb05d444e5a081f37f7affc635035f7a
 
-tzdata==2025.2 \
-    --hash=sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8
+tzdata==2025.3 \
+    --hash=sha256:06a47e5700f3081aab02b2e513160914ff0694bce9947d6b76ebd6bf57cfc5d1
 
 # --- Transitive dependencies (pulled by requests) ---
 
-urllib3==2.5.0 \
-    --hash=sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc
+urllib3==2.6.3 \
+    --hash=sha256:bf272323e553dfb2e87d9bfd225ca7b0f467b919d7bbd355436d3fd37cb0acd4
 
-certifi==2025.7.14 \
-    --hash=sha256:6b31f564a415d79ee77df69d757bb49a5bb53bd9f756cbbe24394ffd6fc1f4b2
+certifi==2026.2.25 \
+    --hash=sha256:027692e4402ad994f1c42e52a4997a9763c646b73e4096e4d5d6db8af1d6f0fa
 
-idna==3.10 \
-    --hash=sha256:946d195a0d259cbba61165e88e65941f16e9b36ea6ddb97f00452bae8b1287d3
+idna==3.11 \
+    --hash=sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea
 
-charset-normalizer==3.4.2 \
-    --hash=sha256:5a9979887252a82fefd3d3ed2a8e3b937a7a809f65dcb1e068b090e165bbe99e
+charset-normalizer==3.4.6 \
+    --hash=sha256:c8ae56368f8cc97c7e40a7ee18e1cedaf8e780cd8bc5ed5ac8b81f238614facb
 
 # --- Transitive dependencies (pulled by python-dateutil) ---
 

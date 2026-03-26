@@ -17,7 +17,8 @@ code security-investigator
 python -m venv .venv
 .venv\Scripts\Activate.ps1          # Windows
 # source .venv/bin/activate          # macOS/Linux
-pip install -r requirements.txt
+pip install --require-hashes -r requirements.lock   # Hash-verified (recommended)
+# pip install -r requirements.txt                   # Without hash verification
 
 # 3. Configure environment
 copy config.json.template config.json
