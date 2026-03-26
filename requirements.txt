@@ -1,8 +1,14 @@
 # Security Investigation Requirements
+#
+# For maximum supply chain protection, use the lock file with hash verification:
+#   pip install --require-hashes -r requirements.lock
+#
+# This file pins exact versions as a baseline. The lock file adds SHA-256 hashes
+# for every package (including transitive deps) to prevent tampered packages.
 
-## Python Dependencies
-requests>=2.31.0
-python-dateutil>=2.8.2
-python-dotenv>=1.0.0
-pytz>=2023.3
-tzdata>=2024.1
+## Python Dependencies (pinned)
+requests==2.32.4
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.2
+pytz==2024.2
+tzdata==2025.2
