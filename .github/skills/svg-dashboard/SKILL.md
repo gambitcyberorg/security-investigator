@@ -1,3 +1,8 @@
+---
+name: svg-dashboard
+description: 'Use this skill when asked to generate SVG data visualization dashboards from investigation data or skill reports. Triggers on keywords like "generate SVG dashboard", "create a visual dashboard", "visualize this report", "SVG from the report", "visualize results", "create SVG chart", "SVG from this data". Supports two modes: manifest-driven structured dashboards (from skill reports with svg-widgets.yaml) and freeform adaptive visualizations from ad-hoc investigation data. Component library includes KPI cards, score cards, bar charts, line charts, donut charts, waterfall charts, tables, recommendation cards, assessment banners. SharePoint Dark Theme default palette.'
+---
+
 # SVG Dashboard Generator
 
 > Renders SVG data visualization dashboards — either from a skill's `svg-widgets.yaml` manifest (structured dashboards) or freeform from ad-hoc investigation data in context.
