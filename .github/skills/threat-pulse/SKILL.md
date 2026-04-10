@@ -71,14 +71,11 @@ The Threat Pulse skill is a rapid, broad-spectrum security scan designed for the
 
 2. **Read `config.json`** — Load workspace ID, tenant, subscription, and Azure MCP parameters before execution.
 
-3. **ASK the user** for output preferences before executing queries:
-   - **Output mode:** Inline chat / Markdown file / Both
-   - **Lookback override:** Default is 7d for most queries; user may want 14d or 30d
-   - If user says "just run it" or similar, default to **inline chat** with **7d lookback**.
+3. **Output defaults** — Default to **inline chat** with **7d lookback**. Only ask the user for output preferences if they explicitly mention a different mode (e.g., "save to file", "markdown report", "30 day lookback"). If the user just says "threat pulse", "run a scan", or similar — proceed immediately with defaults, do not prompt.
 
 4. **⛔ MANDATORY: Evidence-based analysis only** — Every finding must cite query results. Every "clear" verdict must cite 0 results. Follow the Evidence-Based Analysis rule from `copilot-instructions.md`.
 
-5. **Parallel execution** — Run all Data Lake queries in parallel (Q1, Q1b, Q2/Q2b, Q3, Q5, Q10). Run all Advanced Hunting queries in parallel (Q4, Q6, Q7, Q8, Q9, Q11, Q12). The two groups can overlap.
+5. **Parallel execution** — Run the Data Lake query (Q5) and all Advanced Hunting queries (Q1, Q1b, Q2/Q2b, Q3, Q4, Q6, Q7, Q8, Q9, Q10, Q11, Q12) simultaneously.
 
 6. **Graceful fallback for Q2** — `Signinlogs_Anomalies_KQL_CL` is a custom table that may not exist in all workspaces. If query returns `SemanticError: Failed to resolve table`, immediately execute **Q2b** (Identity Protection fallback) instead. Do NOT report the custom table failure as an error — silently fall back and note the data source in the report.
 
@@ -125,36 +122,36 @@ Executing 13 queries across 9 domains:
   🔑 Admin & Cloud  — Cloud app ops, privileged operations (Q9, Q10)
   🛡️ Exposure       — Critical assets, exploitable CVEs (Q11, Q12)
 
-Data Lake: 6 queries in parallel | Advanced Hunting: 7 queries in parallel
+Data Lake: 1 query | Advanced Hunting: 12 queries in parallel
 Estimated time: ~2–4 minutes
 ```
 
-### Phase 1: Data Lake Queries (Q1, Q1b, Q2, Q3, Q5, Q10)
+### Phase 1: Data Lake Query (Q5)
 
-**Run all 6 in parallel — no dependencies between queries.**
+> **Why only 1 query on Data Lake?** Q5 requires a 97-day lookback for SPN baseline computation — AH Graph API caps at 30 days. All other queries use ≤30d lookback on Analytics-tier tables accessible via AH.
 
 | Query | Domain | Purpose | Tool |
 |-------|--------|---------|------|
-| Q1 | 🔴 Incidents | Open High/Critical incidents with MITRE tactics | `query_lake` |
-| Q1b | 🔴 Incidents | 7-day closed incident summary (classification, MITRE, severity) | `query_lake` |
-| Q2 | 🔐 Identity (Human) | Fleet-wide sign-in anomalies (High/Medium) | `query_lake` |
-| Q3 | 🔐 Identity (Human) | Risky sign-ins / Identity Protection summary | `query_lake` |
 | Q5 | 🤖 Identity (NonHuman) | Service principal behavioral drift (90d vs 7d) | `query_lake` |
-| Q10 | 🔑 Admin & Cloud Ops | High-impact admin operations (AuditLogs) | `query_lake` |
 
-**Fallback:** If Q2 fails with table resolution error, execute Q2b in its place.
+### Phase 2: Advanced Hunting Queries (Q1, Q1b, Q2, Q3, Q4, Q6, Q7, Q8, Q9, Q10, Q11, Q12)
 
-### Phase 2: Advanced Hunting Queries (Q4, Q6, Q7, Q8, Q9, Q11, Q12)
+**Run all 12 in parallel — no dependencies between queries.**
 
-**Run all 7 in parallel — no dependencies between queries.**
+> **Design rationale:** The connected LA workspace makes all Sentinel tables (SecurityIncident, SigninLogs, AuditLogs, custom `_CL` tables on Analytics tier, etc.) queryable via AH. AH is preferred: it's free for Analytics-tier tables and avoids per-query Data Lake billing.
 
 | Query | Domain | Purpose | Tool |
 |-------|--------|---------|------|
+| Q1 | 🔴 Incidents | Open High/Critical incidents with MITRE tactics | `RunAdvancedHuntingQuery` |
+| Q1b | 🔴 Incidents | 7-day closed incident summary (classification, MITRE, severity) | `RunAdvancedHuntingQuery` |
+| Q2 | 🔐 Identity (Human) | Fleet-wide sign-in anomalies (High/Medium) | `RunAdvancedHuntingQuery` |
+| Q3 | 🔐 Identity (Human) | Risky sign-ins / Identity Protection summary | `RunAdvancedHuntingQuery` |
 | Q4 | 🔐 Identity (Human) | Password spray / brute-force across Entra ID + RDP/SSH | `RunAdvancedHuntingQuery` |
 | Q6 | 💻 Endpoint | Fleet device process drift (7d baseline vs 1d) | `RunAdvancedHuntingQuery` |
-| Q7 | 💻 Endpoint | Rare process chain singletons (90d) | `RunAdvancedHuntingQuery` |
+| Q7 | 💻 Endpoint | Rare process chain singletons (30d) | `RunAdvancedHuntingQuery` |
 | Q8 | 📧 Email | Inbound email threat snapshot | `RunAdvancedHuntingQuery` |
 | Q9 | 🔑 Admin & Cloud Ops | Cloud app suspicious activity (CloudAppEvents) | `RunAdvancedHuntingQuery` |
+| Q10 | 🔑 Admin & Cloud Ops | High-impact admin operations (AuditLogs) | `RunAdvancedHuntingQuery` |
 | Q11 | 🛡️ Exposure | Internet-facing critical assets | `RunAdvancedHuntingQuery` |
 | Q12 | 🛡️ Exposure | Exploitable CVEs (CVSS ≥ 8) across fleet | `RunAdvancedHuntingQuery` |
 
@@ -241,7 +238,7 @@ Estimated time: ~2–4 minutes
 
 🔴 **Incident hygiene** — Surfaces unresolved High/Critical incidents with age, owner, alert count, and MITRE tactics.
 
-**Tool:** `mcp_sentinel-data_query_lake`
+**Tool:** `RunAdvancedHuntingQuery`
 
 ```kql
 SecurityIncident
@@ -281,7 +278,7 @@ SecurityIncident
 
 🔴 **Threat landscape context** — Even when all incidents are resolved, the classification breakdown, MITRE tactic distribution, and severity mix from recent closures provide actionable signals for cross-correlation and query file recommendations.
 
-**Tool:** `mcp_sentinel-data_query_lake`
+**Tool:** `RunAdvancedHuntingQuery`
 
 **Always runs in parallel with Q1 — not conditional on Q1 results.**
 
@@ -330,9 +327,9 @@ SecurityIncident
 
 🔐 **Anomaly detection** — Queries the pre-computed `Signinlogs_Anomalies_KQL_CL` table for High/Medium anomalies across ALL users.
 
-**Tool:** `mcp_sentinel-data_query_lake`
+**Tool:** `RunAdvancedHuntingQuery`
 
-**⚠️ CUSTOM TABLE — may not exist in all workspaces. If `SemanticError: Failed to resolve table`, silently execute Q2b instead.**
+**⚠️ CUSTOM TABLE — may not exist in all workspaces. If query fails with table resolution error, silently execute Q2b instead.**
 
 ```kql
 Signinlogs_Anomalies_KQL_CL
@@ -370,7 +367,7 @@ Signinlogs_Anomalies_KQL_CL
 
 🔐 **Identity Protection fallback** — Used when `Signinlogs_Anomalies_KQL_CL` does not exist. Queries `SigninLogs` risk detections and `AADUserRiskEvents` for equivalent anomaly coverage.
 
-**Tool:** `mcp_sentinel-data_query_lake`
+**Tool:** `RunAdvancedHuntingQuery`
 
 **⚠️ EXECUTE ONLY if Q2 fails with table resolution error.**
 
@@ -412,7 +409,7 @@ RiskySignins
 
 🔐 **Risk posture snapshot** — Fleet-level summary of Identity Protection risk signals.
 
-**Tool:** `mcp_sentinel-data_query_lake`
+**Tool:** `RunAdvancedHuntingQuery`
 
 ```kql
 SigninLogs
@@ -598,13 +595,13 @@ DeviceProcessEvents
 
 ### Query 7: Rare Process Chain Singletons
 
-💻 **Threat hunting** — Parent→child process combinations appearing fewer than 3 times in 90 days.
+💻 **Threat hunting** — Parent→child process combinations appearing fewer than 3 times in 30 days.
 
 **Tool:** `RunAdvancedHuntingQuery`
 
 ```kql
 DeviceProcessEvents
-| where Timestamp > ago(90d)
+| where Timestamp > ago(30d)
 | summarize 
     Count = count(),
     UniqueDevices = dcount(DeviceName),
@@ -619,7 +616,7 @@ DeviceProcessEvents
 | take 20
 ```
 
-**Purpose:** Surfaces the 20 rarest process chains — singletons and near-singletons. Effective for spotting LOLBin abuse, malware execution, or novel attack tooling. Review `SampleChildCmd` for suspicious command-line patterns.
+**Purpose:** Surfaces the 20 rarest process chains — singletons and near-singletons within the 30-day AH window. Effective for spotting LOLBin abuse, malware execution, or novel attack tooling. Review `SampleChildCmd` for suspicious command-line patterns.
 
 **Verdict logic:**
 - 🟠 Investigate: Any singleton with suspicious parent (cmd.exe, powershell.exe, wscript.exe, mshta.exe, rundll32.exe) or child running from temp/user profile directories
@@ -705,7 +702,7 @@ CloudAppEvents
 
 🔑 **Admin activity monitoring** — Recent high-privilege operations: role assignments, credential additions, consent grants, CA policy changes, password resets.
 
-**Tool:** `mcp_sentinel-data_query_lake`
+**Tool:** `RunAdvancedHuntingQuery`
 
 ```kql
 AuditLogs
@@ -1099,17 +1096,17 @@ No findings crossed escalation thresholds today, but these domains showed activi
 
 | Query | Domain | Records | Data Source | Notes |
 |-------|--------|---------|-------------|-------|
-| Q1 | Incidents (open) | <N> | Data Lake | |
-| Q1b | Incidents (closed 7d) | <N> | Data Lake | Classification: <TP/BP/FP/Undetermined counts> |
-| Q2/Q2b | Identity Anomalies | <N> | Data Lake | <"Custom table" or "Identity Protection fallback"> |
-| Q3 | Identity Protection | <N> | Data Lake | |
+| Q1 | Incidents (open) | <N> | Advanced Hunting | |
+| Q1b | Incidents (closed 7d) | <N> | Advanced Hunting | Classification: <TP/BP/FP/Undetermined counts> |
+| Q2/Q2b | Identity Anomalies | <N> | Advanced Hunting | <"Custom table" or "Identity Protection fallback"> |
+| Q3 | Identity Protection | <N> | Advanced Hunting | |
 | Q4 | Auth Spray | <N> | Advanced Hunting | Entra ID + Endpoint surfaces |
-| Q5 | SPN Drift | <N> | Data Lake | <N SPNs above threshold> |
+| Q5 | SPN Drift | <N> | Data Lake | 97d lookback — only query requiring Data Lake |
 | Q6 | Device Drift | 10 | Advanced Hunting | Pre-ranked top 10 by DriftScore |
-| Q7 | Rare Processes | <N> | Advanced Hunting | |
+| Q7 | Rare Processes | <N> | Advanced Hunting | 30d window (AH Graph API limit) |
 | Q8 | Email Threats | 1 | Advanced Hunting | Single-row aggregate |
 | Q9 | Cloud App Ops | <N> | Advanced Hunting | CloudAppEvents suspicious activity |
-| Q10 | Privileged Ops | <N> | Data Lake | |
+| Q10 | Privileged Ops | <N> | Advanced Hunting | |
 | Q11 | Critical Assets | <N> | Advanced Hunting | <N internet-facing> |
 | Q12 | Exploitable CVEs | <N> | Advanced Hunting | |
 ````
@@ -1137,11 +1134,12 @@ Include the following additional sections in the file report that are omitted fr
 
 | Pitfall | Impact | Mitigation |
 |---------|--------|------------|
-| `Signinlogs_Anomalies_KQL_CL` doesn't exist | Q2 fails | Silently fall back to Q2b (Identity Protection) |
+| `Signinlogs_Anomalies_KQL_CL` doesn't exist in workspace | Q2 fails via AH | Silently fall back to Q2b (Identity Protection) — also via AH |
 | `SecurityAlert.Status` is always "New" | Misleading incident triage | Q1 joins SecurityIncident for real Status |
 | `BehaviorInfo` / `BehaviorEntities` trigger AH MCP safety filter | Q9 query cancelled by tool | Replaced with `CloudAppEvents` query — BehaviorInfo tables removed from skill |
 | `ExposureGraphNodes.NodeProperties` requires double `parse_json()` | Null values if single parse | Q11 uses `parse_json(tostring(parse_json(...)))` pattern |
-| Q5 (SPN drift) takes ~35s due to 97d lookback | Slow query | Acceptable — runs in parallel with other Data Lake queries |
+| Q5 (SPN drift) takes ~35s due to 97d lookback | Slow query | Acceptable — only query that requires Data Lake (AH Graph API caps at 30d, truncating the 90d baseline). Runs in parallel with Q2 |
+| Q7 rare process chains use `ago(30d)` not `ago(90d)` | Reduced singleton detection window | AH Graph API truncates to 30d regardless of KQL time filter. 30d singletons remain high-signal hunting targets. For full 90d coverage, the `rare_process_chains.md` query file in `queries/endpoint/` can be run interactively via Data Lake |
 | `DeviceTvmSoftwareVulnerabilities` is AH-only | Data Lake returns "table not found" | Q12 must use `RunAdvancedHuntingQuery` |
 | `EmailEvents` uses `Timestamp` not `TimeGenerated` | SemanticError if wrong column | Q8 uses `Timestamp` (XDR-native table) |
 | `CloudAppEvents` uses `Timestamp` in AH, `TimeGenerated` in Data Lake | SemanticError if wrong column | Q9 uses `Timestamp` (AH execution) |
