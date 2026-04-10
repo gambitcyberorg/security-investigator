@@ -201,7 +201,9 @@ Estimated time: ~2–4 minutes
 2. Present the pool using the interactive question tool:
    - **Header:** `Follow-Up Investigation`
    - **Question:** `Select an action to launch (or skip):`
-   - **Options:** One per prompt — **Label:** `<icon> <dynamic prompt text>`, **Description:** `Q<N>: <finding> → <skill or query file>`
+   - **Options:** One per prompt — each option is exactly ONE atomic action (one skill + one entity, or one query file + one hunt). Cross-query correlation context goes in the Description, never in the Label.
+     - **Label:** `<icon> <single action text>` (e.g., `🔍 Investigate user jsmith@contoso.com`)
+     - **Description:** `Q<N>: <finding summary> → <skill or query file>` (correlation context like `Q3+Q9:` is fine here)
    - Penultimate option: **Label:** `💾 Save full investigation report` / **Description:** `Save the complete Threat Pulse session (scan + all drill-downs) as a markdown file`
    - Final option: **Label:** `Skip` / **Description:** `No follow-up — investigation complete`
    - **multiSelect:** `true`
@@ -227,6 +229,14 @@ Estimated time: ~2–4 minutes
 - New evidence prompts are prepended (freshest leads first), tagged `🆕`
 - Loop ends when user selects Skip or pool empties (`✅ All follow-up actions completed.`)
 - **🔴 PROHIBITED:** Rendering the prompt pool as a markdown table, numbered list, or plain text instead of calling `vscode_askQuestions`. Every iteration — including after the first follow-up completes — MUST use the interactive question tool so options are clickable. This is the #1 loop-breaking mistake.
+- **🔴 ATOMIC OPTIONS — ONE action per selectable item.** Each option label MUST map to exactly ONE executable action: one skill + one entity, OR one query file + one hunt prompt. When cross-query correlations link multiple findings (e.g., Q3+Q9 correlating a user with both risky sign-ins and inbox rule manipulation), generate **separate options** for each distinct action — do NOT bundle them into a single option. Note the correlation in the **Description** field to preserve context, but keep the Label and action singular.
+
+  **❌ PROHIBITED — bundled multi-action option:**
+  `🔍 Investigate user cameron@contoso.com - Q3+Q9: Inbox rule + MCAS suspicious inbox manipulation → user-investigation, 📄 Hunt delivered phishing emails → queries/email/email_threat_detection.md`
+
+  **✅ CORRECT — one action per option:**
+  - Option 1 — Label: `🔍 Investigate user cameron@contoso.com` / Description: `Q3+Q9: Risky sign-ins + inbox rule manipulation — potential email exfiltration → user-investigation`
+  - Option 2 — Label: `📄 Hunt delivered phishing emails and recipients` / Description: `Q8+Q9: Trace the 4 delivered phishing emails → queries/email/email_threat_detection.md`
 
 ---
 
