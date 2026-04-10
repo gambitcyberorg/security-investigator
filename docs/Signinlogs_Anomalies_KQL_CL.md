@@ -59,8 +59,9 @@ Transient IPv6 addresses (privacy extensions, mobile carriers, rotating prefixes
 ## Suggested Severity Logic (Post-Ingestion)
 ```
 | extend Severity = case(
-    // Baseline guardrail: suppress early non-interactive novelty inflation
-    BaselineSize < 3 and AnomalyType startswith "NewNonInteractive", "Informational",
+    // Baseline guardrail: suppress users still building baseline (< 3 artifacts in 90-day history)
+    // New users generate noise across ALL anomaly types — Q3 (Identity Protection) covers genuine new-account compromise
+    BaselineSize < 3, "Informational",
     // HIGH: Very aggressive use (>= 20 hits in 1 hour) + geographic novelty
     CountryNovelty and CityNovelty and ArtifactHits >= 20, "High",
     // MEDIUM: Moderate use (>= 10 hits) OR any geo novelty
@@ -73,6 +74,7 @@ Transient IPv6 addresses (privacy extensions, mobile carriers, rotating prefixes
 )
 ```
 **Threshold Rationale (Hourly Detection Window):**
+- **Baseline guardrail:** `BaselineSize < 3` → always Informational (user still building 90d baseline; applies to ALL anomaly types — interactive and non-interactive). New users generate noise because everything is "new" — Q3/Identity Protection provides genuine new-account compromise coverage.
 - **20 hits/hour** = Very aggressive (1 sign-in every 3 minutes) → High severity
 - **10 hits/hour** = Active session (P95 threshold) → Medium severity
 - **5 hits/hour** = Multiple uses (above P75) → Low severity
@@ -198,7 +200,7 @@ Signinlogs_Anomalies_KQL_CL
 | where DetectedDateTime between (start .. end)
 | where UserPrincipalName =~ 'jsmith@contoso.com'
 | extend Severity = case(
-    BaselineSize < 3 and AnomalyType startswith "NewNonInteractive", "Informational",
+    BaselineSize < 3, "Informational",
     CountryNovelty and CityNovelty and ArtifactHits >= 20, "High",
     ArtifactHits >= 10, "Medium",
     (CountryNovelty or CityNovelty or StateNovelty), "Medium",
@@ -663,7 +665,7 @@ InteractiveIPAnomalies
 | union NonIntIPAnomalies
 | union NonIntDeviceAnomalies
 | extend Severity = case(
-    BaselineSize < 3 and AnomalyType startswith "NewNonInteractive", "Informational",
+    BaselineSize < 3, "Informational",
     CountryNovelty and CityNovelty and ArtifactHits >= 20, "High",
     ArtifactHits >= 10, "Medium",
     (CountryNovelty or CityNovelty or StateNovelty), "Medium",

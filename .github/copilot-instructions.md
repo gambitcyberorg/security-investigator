@@ -684,7 +684,7 @@ Signinlogs_Anomalies_KQL_CL
 | where TimeGenerated > ago(14d)
 | where UserPrincipalName =~ '<UPN>'
 | extend Severity = case(
-    BaselineSize < 3 and AnomalyType startswith "NewNonInteractive", "Informational",
+    BaselineSize < 3, "Informational",
     CountryNovelty and CityNovelty and ArtifactHits >= 20, "High",
     ArtifactHits >= 10 or CountryNovelty or CityNovelty or StateNovelty, "Medium",
     ArtifactHits >= 5, "Low",
@@ -696,6 +696,7 @@ Signinlogs_Anomalies_KQL_CL
 ```
 
 **Severity Thresholds (Hourly Detection):**
+- **Informational (baseline guardrail):** `BaselineSize < 3` — user still building 90-day baseline; all anomaly types suppressed (Q3/Identity Protection covers genuine new-account compromise)
 - **High:** ≥20 hits/hour + geographic novelty (very aggressive use)
 - **Medium:** ≥10 hits/hour OR any geographic novelty
 - **Low:** ≥5 hits/hour without geographic novelty

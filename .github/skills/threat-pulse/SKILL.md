@@ -21,7 +21,7 @@ The Threat Pulse skill is a rapid, broad-spectrum security scan designed for the
 | 🔑 **Admin & Cloud Ops** | What mailbox rules, OAuth consents, transport rules, or mailbox permission changes occurred? Who performed high-impact admin operations? |
 | 🛡️ **Exposure** | Are any critical assets internet-facing with RCE vulnerabilities? What exploitable CVEs (CVSS ≥ 8) are present across the fleet? |
 
-**Data sources:** `SecurityIncident`, `SecurityAlert`, `Signinlogs_Anomalies_KQL_CL` (custom, fallback: `SigninLogs`), `SigninLogs`, `EntraIdSignInEvents`, `DeviceProcessEvents`, `DeviceLogonEvents`, `ExposureGraphNodes`, `AADServicePrincipalSignInLogs`, `EmailEvents`, `CloudAppEvents`, `AuditLogs`, `DeviceTvmSoftwareVulnerabilities`, `DeviceTvmSoftwareVulnerabilitiesKB`
+**Data sources:** `SecurityIncident`, `SecurityAlert`, `SigninLogs`, `EntraIdSignInEvents`, `DeviceProcessEvents`, `DeviceLogonEvents`, `ExposureGraphNodes`, `AADServicePrincipalSignInLogs`, `EmailEvents`, `CloudAppEvents`, `AuditLogs`, `DeviceTvmSoftwareVulnerabilities`, `DeviceTvmSoftwareVulnerabilitiesKB`, `Signinlogs_Anomalies_KQL_CL` (optional enrichment)
 
 **References:**
 - [Microsoft Sentinel — SecurityIncident](https://learn.microsoft.com/en-us/azure/sentinel/data-source-schema-reference#securityincident)
@@ -53,7 +53,7 @@ The Threat Pulse skill is a rapid, broad-spectrum security scan designed for the
 
 1. **[Critical Workflow Rules](#-critical-workflow-rules---read-first-)** — Mandatory execution requirements
 2. **[Execution Workflow](#execution-workflow)** — Phased query plan with parallel groups
-3. **[Sample KQL Queries](#sample-kql-queries)** — All 13 verified queries with fallback logic
+3. **[Sample KQL Queries](#sample-kql-queries)** — 14 queries (13 core + 1 optional enrichment)
 4. **[Post-Processing](#post-processing)** — Device drift score computation, cross-query correlation
 5. **[Query File Recommendations](#query-file-recommendations)** — Dynamic hunting follow-up from findings
 6. **[Output Modes](#output-modes)** — Inline, markdown file, or both
@@ -75,12 +75,12 @@ The Threat Pulse skill is a rapid, broad-spectrum security scan designed for the
 
 4. **⛔ MANDATORY: Evidence-based analysis only** — Every finding must cite query results. Every "clear" verdict must cite 0 results. Follow the Evidence-Based Analysis rule from `copilot-instructions.md`.
 
-5. **Parallel execution** — Run the Data Lake query (Q5) and all Advanced Hunting queries (Q1, Q1b, Q2/Q2b, Q3, Q4, Q6, Q7, Q8, Q9, Q10, Q11, Q12) simultaneously.
+5. **Parallel execution** — Run the Data Lake query (Q5) and all Advanced Hunting queries (Q1, Q1b, Q2, Q2b, Q3, Q4, Q6, Q7, Q8, Q9, Q10, Q11, Q12) simultaneously. Q2b may fail silently if the custom table doesn't exist.
 
-6. **Graceful fallback for Q2** — `Signinlogs_Anomalies_KQL_CL` is a custom table that may not exist in all workspaces. If query returns `SemanticError: Failed to resolve table`, immediately execute **Q2b** (Identity Protection fallback) instead. Do NOT report the custom table failure as an error — silently fall back and note the data source in the report.
+6. **Optional enrichment for Q2** — `Signinlogs_Anomalies_KQL_CL` is a custom table that requires a scheduled KQL job (most workspaces won't have it). Q2b runs in parallel with Q2. If Q2b returns results, merge them as enrichment under the Q2 section. If Q2b fails with `SemanticError: Failed to resolve table`, skip silently — Q2 (Identity Protection) provides full coverage.
 
 7. **Cross-query correlation** — After all queries complete, check for correlated findings:
-   - User appearing in **both** Q2/Q2b anomalies AND Q3 risky sign-ins → escalate priority
+   - User appearing in **both** Q2 Identity Protection anomalies AND Q2b custom anomalies → escalate priority (corroborated signal)
    - SPN drift (Q5) + unusual credential/consent activity (Q9) → escalate priority
    - Device in rare process chains (Q7) + device in CVE list (Q12) → escalate priority
    - Incident entities (Q1) matching users in Q2/Q3 → link findings
@@ -113,16 +113,16 @@ Workspace: <WorkspaceName> (<WorkspaceId>)
 Lookback: <N>d (user-selected or default 7d)
 Output: <Inline / Markdown file / Both>
 
-Executing 13 queries across 9 domains:
+Executing 14 queries across 9 domains:
   🔴 Incidents      — Open high-severity + 7d closed summary (Q1, Q1b)
-  🔐 Identity       — Sign-in anomalies, risky sign-ins, auth spray (Q2, Q3, Q4)
+  🔐 Identity       — Identity Protection anomalies, risky sign-ins, auth spray (Q2, Q3, Q4)
   🤖 NonHuman ID    — Service principal behavioral drift (Q5)
   💻 Endpoint       — Device process drift, rare process chains (Q6, Q7)
   📧 Email          — Inbound threat snapshot (Q8)
   🔑 Admin & Cloud  — Cloud app ops, privileged operations (Q9, Q10)
   🛡️ Exposure       — Critical assets, exploitable CVEs (Q11, Q12)
 
-Data Lake: 1 query | Advanced Hunting: 12 queries in parallel
+Data Lake: 1 query | Advanced Hunting: 13 queries in parallel (Q2b may skip silently)
 Estimated time: ~2–4 minutes
 ```
 
@@ -134,9 +134,9 @@ Estimated time: ~2–4 minutes
 |-------|--------|---------|------|
 | Q5 | 🤖 Identity (NonHuman) | Service principal behavioral drift (90d vs 7d) | `query_lake` |
 
-### Phase 2: Advanced Hunting Queries (Q1, Q1b, Q2, Q3, Q4, Q6, Q7, Q8, Q9, Q10, Q11, Q12)
+### Phase 2: Advanced Hunting Queries (Q1, Q1b, Q2, Q2b, Q3, Q4, Q6, Q7, Q8, Q9, Q10, Q11, Q12)
 
-**Run all 12 in parallel — no dependencies between queries.**
+**Run all 13 in parallel — no dependencies between queries. Q2b may fail silently if the custom anomaly table doesn't exist.**
 
 > **Design rationale:** The connected LA workspace makes all Sentinel tables (SecurityIncident, SigninLogs, AuditLogs, custom `_CL` tables on Analytics tier, etc.) queryable via AH. AH is preferred: it's free for Analytics-tier tables and avoids per-query Data Lake billing.
 
@@ -144,7 +144,8 @@ Estimated time: ~2–4 minutes
 |-------|--------|---------|------|
 | Q1 | 🔴 Incidents | Open High/Critical incidents with MITRE tactics | `RunAdvancedHuntingQuery` |
 | Q1b | 🔴 Incidents | 7-day closed incident summary (classification, MITRE, severity) | `RunAdvancedHuntingQuery` |
-| Q2 | 🔐 Identity (Human) | Fleet-wide sign-in anomalies (High/Medium) | `RunAdvancedHuntingQuery` |
+| Q2 | 🔐 Identity (Human) | Identity Protection sign-in anomalies | `RunAdvancedHuntingQuery` |
+| Q2b | 🔐 Identity (Human) | Custom anomaly table enrichment (optional) | `RunAdvancedHuntingQuery` |
 | Q3 | 🔐 Identity (Human) | Risky sign-ins / Identity Protection summary | `RunAdvancedHuntingQuery` |
 | Q4 | 🔐 Identity (Human) | Password spray / brute-force across Entra ID + RDP/SSH | `RunAdvancedHuntingQuery` |
 | Q6 | 💻 Endpoint | Fleet device process drift (7d baseline vs 1d) | `RunAdvancedHuntingQuery` |
@@ -333,53 +334,11 @@ SecurityIncident
 
 ---
 
-### Query 2: Fleet-Wide Sign-In Anomalies (Primary — Custom Table)
+### Query 2: Fleet-Wide Sign-In Anomalies (Primary — Identity Protection)
 
-🔐 **Anomaly detection** — Queries the pre-computed `Signinlogs_Anomalies_KQL_CL` table for High/Medium anomalies across ALL users.
-
-**Tool:** `RunAdvancedHuntingQuery`
-
-**⚠️ CUSTOM TABLE — may not exist in all workspaces. If query fails with table resolution error, silently execute Q2b instead.**
-
-```kql
-Signinlogs_Anomalies_KQL_CL
-| where TimeGenerated > ago(7d)
-| extend Severity = case(
-    BaselineSize < 3 and AnomalyType startswith "NewNonInteractive", "Informational",
-    CountryNovelty and CityNovelty and ArtifactHits >= 20, "High",
-    ArtifactHits >= 10, "Medium",
-    CountryNovelty or CityNovelty or StateNovelty, "Medium",
-    ArtifactHits >= 5, "Low",
-    "Informational")
-| where Severity in ("High", "Medium")
-| summarize 
-    AnomalyCount = count(),
-    HighCount = countif(Severity == "High"),
-    TopAnomalyTypes = make_set(AnomalyType, 5),
-    TopCountries = make_set(Country, 5),
-    LatestDetection = max(DetectedDateTime)
-    by UserPrincipalName
-| order by HighCount desc, AnomalyCount desc
-| take 15
-```
-
-**Purpose:** Surfaces top 15 users with the most High/Medium sign-in anomalies in the past 7 days. Geographic novelty (new countries/cities) combined with high hit counts indicates potential account compromise or token theft.
-
-**Verdict logic:**
-- 🔴 Escalate: Any user with `HighCount > 0` (High-severity anomalies with geo-novelty + high hit counts)
-- 🟠 Investigate: `AnomalyCount > 5` for any single user, or users with `NewInteractiveIP` / `NewInteractiveDeviceCombo` anomaly types
-- 🟡 Monitor: Only Medium-severity `NewNonInteractive*` anomalies with low hit counts
-- ✅ Clear: 0 High/Medium anomalies across the fleet
-
----
-
-### Query 2b: Fleet-Wide Sign-In Anomalies (Fallback — Identity Protection)
-
-🔐 **Identity Protection fallback** — Used when `Signinlogs_Anomalies_KQL_CL` does not exist. Queries `SigninLogs` risk detections and `AADUserRiskEvents` for equivalent anomaly coverage.
+🔐 **Anomaly detection** — Queries `SigninLogs` Identity Protection risk detections for users with anomalous sign-in patterns. Works in every workspace — no custom table required.
 
 **Tool:** `RunAdvancedHuntingQuery`
-
-**⚠️ EXECUTE ONLY if Q2 fails with table resolution error.**
 
 ```kql
 let RiskySignins = SigninLogs
@@ -403,7 +362,7 @@ let RiskySignins = SigninLogs
 RiskySignins
 ```
 
-**Purpose:** Fallback that achieves similar anomaly coverage via Identity Protection risk detections (unfamiliarFeatures, impossibleTravel, maliciousIPAddress, etc.) when the custom anomaly table is unavailable. Results are formatted to match Q2's output shape for consistent report rendering.
+**Purpose:** Surfaces top 15 users with the most Identity Protection risk detections in the past 7 days. Covers ML-driven detections like `unfamiliarFeatures`, `impossibleTravel`, `maliciousIPAddress`, `anonymizedIPAddress`, `mcasSuspiciousInboxManipulationRules`, and token-based threats that require Microsoft's threat intelligence graph.
 
 **Verdict logic:**
 - 🔴 Escalate: Any user with `HighCount > 3` or multiple users with `HighCount > 0`
@@ -411,7 +370,48 @@ RiskySignins
 - 🟡 Monitor: Only `MediumCount > 0` with low-severity risk event types (e.g., `unfamiliarFeatures`)
 - ✅ Clear: 0 risky sign-in anomalies across the fleet
 
-**Report note:** When Q2b is used instead of Q2, include this in the report header: `📊 Data Source: Identity Protection (SigninLogs risk events) — custom anomaly table not available in this workspace.`
+---
+
+### Query 2b: Fleet-Wide Sign-In Anomalies (Optional Enrichment — Custom Anomaly Table)
+
+🔐 **Baseline deviation enrichment** — Queries the pre-computed `Signinlogs_Anomalies_KQL_CL` table for non-interactive token and device combo anomalies that Identity Protection does not cover. **This is supplementary data, not the primary signal.**
+
+**Tool:** `RunAdvancedHuntingQuery`
+
+**⚠️ CUSTOM TABLE — may not exist in most workspaces. If query fails with table resolution error, skip silently. Q2b is optional enrichment — Q2 (Identity Protection) is the primary data source.**
+
+```kql
+Signinlogs_Anomalies_KQL_CL
+| where TimeGenerated > ago(7d)
+| extend Severity = case(
+    BaselineSize < 3, "Informational",
+    CountryNovelty and CityNovelty and ArtifactHits >= 20, "High",
+    ArtifactHits >= 10, "Medium",
+    CountryNovelty or CityNovelty or StateNovelty, "Medium",
+    ArtifactHits >= 5, "Low",
+    "Informational")
+| where Severity in ("High", "Medium")
+| summarize 
+    AnomalyCount = count(),
+    HighCount = countif(Severity == "High"),
+    TopAnomalyTypes = make_set(AnomalyType, 5),
+    TopCountries = make_set(Country, 5),
+    LatestDetection = max(DetectedDateTime),
+    MinBaselineSize = min(BaselineSize)
+    by UserPrincipalName
+| order by HighCount desc, AnomalyCount desc
+| take 15
+```
+
+**Purpose:** Supplements Q2 with 90-day per-user IP/device baseline deviation analysis. Unique coverage over Identity Protection:
+- **Non-interactive token origin tracking** — detects refresh token reuse from new geos that IdP doesn't evaluate
+- **Device combo changes** — OS+Browser fingerprint shifts not tracked by IdP
+- **Custom 90d baseline** — more granular per-user artifact history than IdP's ML model
+
+**Merge rule:** If Q2b returns results, present them in a `📊 Custom Anomaly Enrichment` sub-section under the Q2 section. Users appearing in **both** Q2 and Q2b are escalated (corroborated signal). Q2b-only users are presented as supplementary context, not escalated independently.
+
+**Report note:** When Q2b data is available, include: `📊 Enriched with custom anomaly table (Signinlogs_Anomalies_KQL_CL) — 90d baseline deviation analysis.`
+When Q2b is unavailable, include: `📊 Custom anomaly table not available — using Identity Protection only.`
 
 ---
 
@@ -833,7 +833,8 @@ After all queries complete, check these correlation patterns and escalate priori
 
 | Pattern | Queries | Implication | Action |
 |---------|---------|-------------|--------|
-| Same user in anomalies AND risky sign-ins | Q2 + Q3 | Corroborated identity compromise signal | Escalate to 🔴 |
+| Same user in Identity Protection AND custom anomalies | Q2 + Q2b | Corroborated identity compromise signal — both ML risk AND baseline deviation | Escalate to 🔴 |
+| Same user in anomalies AND risky sign-ins | Q2 + Q3 | Multiple identity risk signals on same user | Escalate to 🔴 |
 | SPN drift AND unusual credential/consent activity | Q5 + Q9 | App credential abuse / persistence | Escalate to 🔴 |
 | Device with rare process chain AND exploitable CVE | Q7 + Q12 | Potential active exploitation | Escalate to 🔴 |
 | Incident entity matches anomaly/risk user | Q1 + Q2/Q3 | Known incident may be expanding | Link findings in report |
@@ -854,7 +855,7 @@ Extract search keywords from findings in domains that received a non-✅ verdict
 | Finding Source | Keywords |
 |---------------|---------|
 | Q1/Q1b (Incidents) | **"incident"**, MITRE tactic names, alert titles |
-| Q2/Q2b (Identity) | **"identity"**, "anomaly", "sign-in", "phishing" if geo-novelty |
+| Q2 (Identity Protection) | **"identity"**, "anomaly", "sign-in", "phishing" if risk event indicates phishing |
 | Q3 (Identity Protection) | **"risky sign-in"**, "token", "aitm", "phishing" if in risk detail |
 | Q4 (Auth Spray) | **"password spray"**, "brute force", "RDP", "credential" |
 | Q5 (SPN Drift) | **"service principal"**, "app registration", "credential" |
@@ -870,7 +871,7 @@ When the highest verdict is 🟡, supplement query file results with up to **3**
 | Domain | Skill | Prompt |
 |--------|-------|--------|
 | Q1/Q1b (Incidents) | `incident-investigation` | "Triage the oldest open incident to review classification" |
-| Q2/Q2b, Q3 (Identity) | `identity-posture` | "Run identity posture report for account hygiene and privilege review" |
+| Q2, Q3 (Identity) | `identity-posture` | "Run identity posture report for account hygiene and privilege review" |
 | Q4 (Auth Spray) | `ioc-investigation` | "Enrich the top spray source IP for threat intel context" |
 | Q5 (SPN Drift) | `app-registration-posture` | "Run app registration posture audit for SPN hygiene and overprivilege detection" |
 | Q6, Q7 (Endpoint) | `computer-investigation` | "Investigate the top drifting device for process and network activity" |
@@ -988,7 +989,7 @@ Render the following sections in order. Omit sections only if explicitly noted a
 
 **Generated:** <YYYY-MM-DD HH:MM> UTC
 **Workspace:** <WorkspaceName> (`<WorkspaceId>`)
-**Scan Duration:** ~<N>s | **Queries:** 13 | **Domains:** 9
+**Scan Duration:** ~<N>s | **Queries:** 14 (Q2b optional) | **Domains:** 9
 
 ---
 
@@ -997,7 +998,7 @@ Render the following sections in order. Omit sections only if explicitly noted a
 | # | Domain | Status | Key Finding |
 |---|--------|--------|-------------|
 | Q1 | 🔴 **Incidents** | <verdict> | <1-line finding — includes Q1b closed summary context> |
-| Q2 | 🔐 **Sign-In Anomalies** | <verdict> | <1-line finding> |
+| Q2 | 🔐 **Identity Protection Anomalies** | <verdict> | <1-line finding> |
 | Q3 | 🔐 **Identity Protection** | <verdict> | <1-line finding> |
 | Q4 | 🔐 **Auth Spray** | <verdict> | <1-line finding> |
 | Q5 | 🤖 **SPN Drift** | <verdict> | <1-line finding> |
@@ -1108,7 +1109,8 @@ No findings crossed escalation thresholds today, but these domains showed activi
 |-------|--------|---------|-------------|-------|
 | Q1 | Incidents (open) | <N> | Advanced Hunting | |
 | Q1b | Incidents (closed 7d) | <N> | Advanced Hunting | Classification: <TP/BP/FP/Undetermined counts> |
-| Q2/Q2b | Identity Anomalies | <N> | Advanced Hunting | <"Custom table" or "Identity Protection fallback"> |
+| Q2 | Identity Protection Anomalies | <N> | Advanced Hunting | SigninLogs risk detections |
+| Q2b | Custom Anomaly Enrichment | <N> | Advanced Hunting | Optional — Signinlogs_Anomalies_KQL_CL (skip if unavailable) |
 | Q3 | Identity Protection | <N> | Advanced Hunting | |
 | Q4 | Auth Spray | <N> | Advanced Hunting | Entra ID + Endpoint surfaces |
 | Q5 | SPN Drift | <N> | Data Lake | 97d lookback — only query requiring Data Lake |
@@ -1144,11 +1146,11 @@ Include the following additional sections in the file report that are omitted fr
 
 | Pitfall | Impact | Mitigation |
 |---------|--------|------------|
-| `Signinlogs_Anomalies_KQL_CL` doesn't exist in workspace | Q2 fails via AH | Silently fall back to Q2b (Identity Protection) — also via AH |
+| `Signinlogs_Anomalies_KQL_CL` doesn't exist in workspace | Q2b returns table error | Skip silently — Q2 (Identity Protection) provides full coverage. Q2b is optional enrichment only |
 | `SecurityAlert.Status` is always "New" | Misleading incident triage | Q1 joins SecurityIncident for real Status |
 | `BehaviorInfo` / `BehaviorEntities` trigger AH MCP safety filter | Q9 query cancelled by tool | Replaced with `CloudAppEvents` query — BehaviorInfo tables removed from skill |
 | `ExposureGraphNodes.NodeProperties` requires double `parse_json()` | Null values if single parse | Q11 uses `parse_json(tostring(parse_json(...)))` pattern |
-| Q5 (SPN drift) takes ~35s due to 97d lookback | Slow query | Acceptable — only query that requires Data Lake (AH Graph API caps at 30d, truncating the 90d baseline). Runs in parallel with Q2 |
+| Q5 (SPN drift) takes ~35s due to 97d lookback | Slow query | Acceptable — only query that requires Data Lake (AH Graph API caps at 30d, truncating the 90d baseline). Runs in parallel with all other queries |
 | Q7 rare process chains use `ago(30d)` not `ago(90d)` | Reduced singleton detection window | AH Graph API truncates to 30d regardless of KQL time filter. 30d singletons remain high-signal hunting targets. For full 90d coverage, the `rare_process_chains.md` query file in `queries/endpoint/` can be run interactively via Data Lake |
 | `DeviceTvmSoftwareVulnerabilities` is AH-only | Data Lake returns "table not found" | Q12 must use `RunAdvancedHuntingQuery` |
 | `EmailEvents` uses `Timestamp` not `TimeGenerated` | SemanticError if wrong column | Q8 uses `Timestamp` (XDR-native table) |

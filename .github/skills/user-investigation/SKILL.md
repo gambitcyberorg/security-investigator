@@ -485,7 +485,7 @@ Signinlogs_Anomalies_KQL_CL
 | where DetectedDateTime between (datetime(<StartDate>) .. datetime(<EndDate>))
 | where UserPrincipalName =~ '<UPN>'
 | extend Severity = case(
-    BaselineSize < 3 and AnomalyType startswith "NewNonInteractive", "Informational",
+    BaselineSize < 3, "Informational",
     CountryNovelty and CityNovelty and ArtifactHits >= 20, "High",
     ArtifactHits >= 10, "Medium",
     (CountryNovelty or CityNovelty or StateNovelty), "Medium",
