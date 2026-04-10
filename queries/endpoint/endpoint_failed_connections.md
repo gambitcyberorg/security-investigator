@@ -3,7 +3,7 @@
 **Created:** 2026-01-13  
 **Platform:** Microsoft Sentinel  
 **Tables:** DeviceLogonEvents, DeviceNetworkEvents  
-**Keywords:** failed logon, brute force, failed connection, port scan, blocked attack, endpoint, device  
+**Keywords:** failed logon, brute force, password spray, failed connection, port scan, blocked attack, endpoint, device, RDP  
 **MITRE:** T1110, T1046, TA0006, TA0007  
 **Timeframe:** Last 14 days (configurable)
 

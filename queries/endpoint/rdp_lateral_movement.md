@@ -3,7 +3,7 @@
 **Created:** 2026-01-28  
 **Platform:** Microsoft Sentinel  
 **Tables:** SecurityEvent  
-**Keywords:** RDP, lateral movement, brute force, credential stuffing, failed logon, remote desktop, EventID 4624, EventID 4625, LogonType 10  
+**Keywords:** RDP, lateral movement, brute force, password spray, credential stuffing, failed logon, remote desktop, EventID 4624, EventID 4625, LogonType 10  
 **MITRE:** T1021.001, TA0008  
 **Timeframe:** Last 7 days (configurable)
 

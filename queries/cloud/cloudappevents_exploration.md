@@ -3,7 +3,7 @@
 **Created:** 2026-01-13  
 **Platform:** Microsoft Sentinel  
 **Tables:** CloudAppEvents  
-**Keywords:** cloud app, Office 365, Azure AD, AWS, external user, admin activity, impersonation, anonymous proxy, geographic anomaly, baseline  
+**Keywords:** cloud app, Office 365, Azure AD, AWS, external user, admin activity, impersonation, anonymous proxy, geographic anomaly, baseline, inbox rule, forwarding, transport rule, mailbox permission  
 **MITRE:** T1078, T1199, TA0001, TA0009  
 **Timeframe:** Last 7 days (configurable)
 

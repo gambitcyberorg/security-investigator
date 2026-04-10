@@ -167,6 +167,58 @@ Estimated time: ~2–4 minutes
 5. **⛔ STOP — Query File Recommendation Gate:** Before proceeding to step 6, explicitly check: _"Do any domains have a 🔴 or 🟠 verdict?"_ If YES → execute the [Query File Recommendations](#query-file-recommendations) procedure NOW (extract keywords from findings → `grep_search` scoped to `queries/**` → match files → prepare the `📂 Recommended Query Files` section). If NO (all ✅/🟡) → skip. **Do NOT proceed to step 6 until this gate is resolved.**
 6. Render output in requested mode (report MUST include the Query Files section if step 5 triggered it)
 
+### Phase 4: Interactive Follow-Up Loop
+
+**After rendering the report, present the user with a selectable list of follow-up actions — skill investigations, query file hunts, and IOC lookups.** Runs ONLY when at least one 🔴/🟠 verdict exists.
+
+**This is a loop, not a one-shot.** After each action completes, re-present the selection list with the prompt pool updated.
+
+**Prompt types (three categories, one unified list):**
+
+| Type | Icon | Source | Example |
+|------|------|--------|---------|
+| **Skill investigation** | 🔍 | Per-query `Drill-down:` skill + entities from findings | `🔍 Investigate user jsmith@contoso.com` → `user-investigation` |
+| **Query file hunt** | 📄 | Keyword extraction → `grep_search` → `queries/**` | `📄 Hunt for RDP lateral movement from 10.0.0.50` → `queries/endpoint/rdp_lateral_movement.md` |
+| **IOC lookup** | 🎯 | Suspicious IPs, domains, hashes surfaced in findings | `🎯 Enrich and investigate IP 203.0.113.42` → `ioc-investigation` |
+
+**Skill matching rules — derive from findings:**
+
+| Finding Type | Skill | Prompt Pattern |
+|-------------|-------|---------------|
+| Username/UPN in Q2–Q4, Q9, Q10 | `user-investigation` | `Investigate <UPN>` |
+| IP address in Q4 (spray source) | `ioc-investigation` | `Investigate IP <address>` |
+| SPN in Q5 | `scope-drift-detection/spn` | `Analyze drift for <SPN>` |
+| Device in Q6, Q7, Q11, Q12 | `computer-investigation` | `Investigate device <hostname>` |
+| Email threats in Q8 | `email-threat-posture` | `Run email threat posture report` |
+| CVE in Q12 | `exposure-investigation` | `Run vulnerability report for <CVE>` |
+| Incident in Q1 | `incident-investigation` | `Investigate incident <ProviderIncidentId>` |
+
+**Procedure:**
+1. Build the **initial prompt pool** by combining:
+   - Skill prompts: one per unique entity + matching skill from the table above
+   - Query file prompts: from Phase 3 step 5 keyword extraction
+   - IOC prompts: any suspicious IPs/domains from 🔴/🟠 findings not already covered by a skill prompt
+   - Deduplicate: if a skill prompt and IOC prompt target the same entity, keep only the skill prompt
+2. Present the pool using the interactive question tool:
+   - **Header:** `Follow-Up Investigation`
+   - **Question:** `Select an action to launch (or skip):`
+   - **Options:** One per prompt — **Label:** `<icon> <dynamic prompt text>`, **Description:** `Q<N>: <finding> → <skill or query file>`
+   - Final option: **Label:** `Skip` / **Description:** `No follow-up — investigation complete`
+   - **multiSelect:** `false`
+3. If user selects **Skip** or pool is empty: end skill execution
+4. If user selects an action:
+   a. **Skill prompt:** load the skill's SKILL.md, execute the investigation with the target entity
+   b. **Query file prompt:** read the query file, add as context, execute the hunt
+   c. **IOC prompt:** load `ioc-investigation` skill, execute with the target indicator
+   d. Remove the completed prompt from the pool
+   e. Scan results for **new evidence** (entities, IOCs, TTPs not in original Threat Pulse results) — generate new prompts if found, prepend to pool with `🆕` tag
+   f. Return to step 2
+
+**Prompt pool rules:**
+- Completed prompts are removed — never re-offered
+- New evidence prompts are prepended (freshest leads first), tagged `🆕`
+- Loop ends when user selects Skip or pool empties (`✅ All follow-up actions completed.`)
+
 ---
 
 ## Sample KQL Queries
@@ -613,8 +665,7 @@ CloudAppEvents
     "Set-Mailbox",
     "Add-MailboxPermission",
     "New-TransportRule", "Set-TransportRule",
-    "New-Mailbox",
-    "MailItemsAccessed"
+    "New-Mailbox"
 )
 | summarize
     Count = count(),
@@ -625,11 +676,11 @@ CloudAppEvents
 | take 20
 ```
 
-**Purpose:** Surfaces cloud app activity that Q10 (AuditLogs) cannot see — mailbox rule creation/modification (T1114.003 email exfiltration via forwarding), transport rule changes (org-wide mail routing manipulation), mailbox permission grants (delegate access abuse), and `MailItemsAccessed` (programmatic/API mailbox access distinct from normal email reading — a key indicator of OAuth app abuse or token theft accessing mailbox content via Graph/EWS).
+**Purpose:** Surfaces cloud app activity that Q10 (AuditLogs) cannot see — mailbox rule creation/modification (T1114.003 email exfiltration via forwarding), transport rule changes (org-wide mail routing manipulation), mailbox permission grants (delegate access abuse), and new mailbox creation.
 
 **Verdict logic:**
-- 🔴 Escalate: `New-InboxRule` or `Set-InboxRule` with forwarding targets to external domains; `MailItemsAccessed` from unexpected accounts (non-service, non-admin)
-- 🟠 Investigate: Any `New-TransportRule` / `Set-TransportRule` (org-wide impact); `Add-MailboxPermission` from non-admin accounts; high-volume `MailItemsAccessed`
+- 🔴 Escalate: `New-InboxRule` or `Set-InboxRule` with forwarding targets to external domains
+- 🟠 Investigate: Any `New-TransportRule` / `Set-TransportRule` (org-wide impact); `Add-MailboxPermission` from non-admin accounts
 - 🟡 Monitor: `Set-Mailbox` changes
 - ✅ Clear: 0 results — none of these high-signal operations occurred
 
@@ -788,7 +839,7 @@ Extract search keywords deterministically from 🔴/🟠 findings:
 | Q5 (SPN Drift) | "service principal", "app registration", "credential" |
 | Q7 (Rare Processes) | Process names from singleton chains (e.g., "mimikatz", "rclone", "psexec"), "rare process" |
 | Q8 (Email) | "phishing", "email", "spam", "malware" if delivered threats > 0 |
-| Q9 (Cloud App Ops) | ActionType values from CloudAppEvents (e.g., "New-InboxRule", "MailItemsAccessed", "New-TransportRule") |
+| Q9 (Cloud App Ops) | ActionType values from CloudAppEvents (e.g., "New-InboxRule", "New-TransportRule", "Add-MailboxPermission") |
 | Q12 (CVEs) | Specific CVE IDs from results, software names from `SoftwareName` column |
 
 ### Search Procedure
@@ -823,7 +874,7 @@ Based on today's findings, these query files contain pre-built hunting campaigns
 
 ...
 
-> **How to use:** Open a query file link above to add it as chat context, then use the suggested prompt (or adapt it) to launch a targeted hunting campaign.
+> **After the report renders, you will be presented with a selectable list of these campaigns to launch directly.**
 
 <If no matching query files found:>
 
