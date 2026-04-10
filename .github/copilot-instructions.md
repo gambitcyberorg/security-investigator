@@ -24,11 +24,11 @@ This workspace contains a security investigation automation system. GitHub Copil
 
 ## 🔧 ENVIRONMENT CONFIGURATION
 
-**Environment-specific values (workspace IDs, tenant IDs, resource group names, API tokens) are stored in `config.json` at the workspace root.** This file is gitignored and never committed.
+**Environment-specific values (workspace IDs, tenant IDs, resource group names) are stored in `config.json` at the workspace root.** This file is gitignored and never committed.
 
 When you need environment values (especially for Azure MCP Server calls), **read `config.json`** instead of asking the user or hardcoding values.
 
-**Schema** (see `config.json.template` for field names):
+**`config.json` Schema** (see `config.json.template` for field names):
 
 | Field | Used By | Purpose |
 |-------|---------|--------|
@@ -39,10 +39,17 @@ When you need environment values (especially for Azure MCP Server calls), **read
 | `azure_mcp.workspace_name` | Azure MCP `workspace_log_query` | Log Analytics workspace display name |
 | `azure_mcp.tenant` | Azure MCP Server (all calls) | Required to avoid cross-tenant auth errors |
 | `azure_mcp.subscription` | Azure MCP Server (all calls) | Target subscription |
-| `ipinfo_token` | `enrich_ips.py` | ipinfo.io API key |
-| `abuseipdb_token` | `enrich_ips.py` | AbuseIPDB API key |
-| `vpnapi_token` | `enrich_ips.py` | vpnapi.io API key |
-| `shodan_token` | `enrich_ips.py` | Shodan API key |
+
+**API Tokens (`.env` file):** Enrichment API tokens are stored in `.env` (gitignored), loaded via `python-dotenv`. Copy `.env.template` to `.env` and fill in your keys.
+
+| Environment Variable | Used By | Purpose |
+|---------------------|---------|--------|
+| `IPINFO_TOKEN` | `enrich_ips.py` | ipinfo.io API key |
+| `ABUSEIPDB_TOKEN` | `enrich_ips.py` | AbuseIPDB API key |
+| `VPNAPI_TOKEN` | `enrich_ips.py` | vpnapi.io API key |
+| `SHODAN_TOKEN` | `enrich_ips.py` | Shodan API key |
+
+> **Fallback:** `enrich_ips.py` also reads `ipinfo_token`/`abuseipdb_token`/`vpnapi_token`/`shodan_token` from `config.json` if the environment variables are not set. `.env` takes precedence.
 
 ### Prerequisites
 
