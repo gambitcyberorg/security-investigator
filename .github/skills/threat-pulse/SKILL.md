@@ -216,10 +216,11 @@ For query file prompts, substitute `ago(7d)` with `ago(30d)`. Note expansions in
    - **multiSelect:** `true`
 3. If user selects **Skip** (alone) or pool is empty: end skill execution
 4. If user's selection includes **💾 Save full investigation report:**
-   a. Compile the original Threat Pulse dashboard + all drill-down investigation results accumulated during this session into a single markdown file
-   b. Save to `reports/threat-pulse/Threat_Pulse_YYYYMMDD_HHMMSS.md` using the [Markdown File Report Template](#markdown-file-report-template)
-   c. Append a `## Drill-Down Investigation Results` section containing the findings from each follow-up action completed during this session, in the order they were executed
-   d. Remove the save option from the pool (report already saved). If no other actions were selected alongside it, return to step 2. Otherwise continue to step 5 with the remaining selections.
+   a. Read `/memories/session/threat-pulse-drilldowns.md` to recover all accumulated drill-down findings (critical after context compaction)
+   b. Compile the complete session — original Threat Pulse dashboard + all drill-down investigation results — into a single markdown file using the [Markdown File Report Template](#markdown-file-report-template)
+   c. Save to `reports/threat-pulse/Threat_Pulse_YYYYMMDD_HHMMSS.md`
+   d. **Weave drill-down insights into the main report** — do NOT simply append raw drill-down output. See the [Markdown File Report Template](#markdown-file-report-template) for the exact structure, including the `## Drill-Down Investigation Results` section format and the `## Cross-Investigation Correlation` section.
+   e. Remove the save option from the pool (report already saved). If no other actions were selected alongside it, return to step 2. Otherwise continue to step 5 with the remaining selections.
 5. If user selects one or more actions:
    a. Build a **todo list** with one item per selected action, all `not-started`
    b. Execute each action **sequentially** in selection order:
@@ -227,6 +228,20 @@ For query file prompts, substitute `ago(7d)` with `ago(30d)`. Note expansions in
       - **Query file prompt:** read the query file, add as context, execute the hunt
       - **IOC prompt:** load `ioc-investigation` skill, execute with the target indicator
       - Mark each todo `completed` as it finishes
+      - **⛔ MANDATORY session state capture:** After each drill-down completes, append a structured summary to `/memories/session/threat-pulse-drilldowns.md`. Create the file on first drill-down. Append one entry per drill-down:
+        ```
+        ### <N>. <Prompt Label> (<skill-name>, <YYYY-MM-DD HH:MM>)
+        - **Entity:** <target entity>
+        - **Trigger:** Q<N> — <original finding from pulse>
+        - **Key Findings:**
+          - <finding 1 — specific, evidence-cited>
+          - <finding 2>
+          - ...(max 8 bullet points — prioritize high-risk and novel discoveries)
+        - **Risk Assessment:** <emoji> <level> — <1-line justification with evidence>
+        - **Cross-References:** <entities/IOCs that overlap with other drill-downs or original pulse queries>
+        - **Recommendations:** <top 1-3 action items from this drill-down>
+        ```
+        This ensures drill-down insights survive context compaction and are available when the user requests `💾 Save full investigation report`.
    c. Remove all completed prompts from the pool
    d. Scan results for **new evidence** (entities, IOCs, TTPs not in original Threat Pulse results) — generate new prompts if found, prepend to pool with `🆕` tag
    e. **Return to step 2 — call the interactive question tool again.** Every loop iteration MUST use `vscode_askQuestions` to present the updated pool as a selectable list. Do NOT render a markdown table/numbered list as a substitute.
@@ -1026,6 +1041,137 @@ Insert `📂 Recommended Query Files` section after **Recommended Actions** in t
 
 ---
 
+## Markdown File Report Template
+
+**This template is used when the user selects `💾 Save full investigation report` in Phase 4.** It produces a single markdown file that weaves together the initial Threat Pulse scan AND all subsequent drill-down investigations into a cohesive narrative.
+
+**Source data:** Original pulse query results (from context) + `/memories/session/threat-pulse-drilldowns.md` (accumulated drill-down findings). If context was compacted and drill-down details are lost, the session memory file is the authoritative source for drill-down findings.
+
+### File Structure
+
+```markdown
+# 🔍 Threat Pulse — Full Investigation Report
+**Workspace:** <name> (`<id>`)  
+**Scan Date:** <YYYY-MM-DD HH:MM UTC>  
+**Report Generated:** <YYYY-MM-DD HH:MM UTC>  
+**Scan Duration:** <N>min | **Queries:** 12 | **Drill-Downs:** <N>  
+
+---
+
+## Executive Summary
+
+<2-4 sentence narrative synthesizing the OVERALL investigation — pulse findings + all drill-down discoveries. 
+Highlight the most critical finding, whether it came from the initial scan or a drill-down.
+State the final risk posture incorporating all evidence gathered.>
+
+## Dashboard Summary
+
+<Same 10-row verdict table as inline report — Q1, Q1b, Q2, Q4-Q12>
+
+## Detailed Findings
+
+<Same per-query sections as inline report — every query gets a section>
+
+## Cross-Query Correlations
+
+<Same as inline report — correlations from the 12 pulse queries>
+
+## Drill-Down Investigation Results
+
+<One subsection per drill-down, in execution order. NOT raw dumps — structured summaries 
+that reference back to the triggering pulse query and forward to other drill-downs.>
+
+### 1. <Drill-Down Title> — <Skill Name>
+
+**Triggered by:** Q<N> — <original finding from pulse>  
+**Entity:** <target>  
+**Lookback:** <timerange, note if expanded beyond 7d>  
+**Risk Assessment:** <emoji> <level>
+
+**Key Findings:**
+- <Most important finding — specific, evidence-cited>
+- <Second finding>
+- ...(prioritized, max 8)
+
+**Evidence Summary:**
+<1-2 paragraph narrative of what was discovered, with specific numbers and identifiers.
+Link back to pulse queries where findings corroborate or expand on initial data.>
+
+**Recommendations:**
+1. <Action item from this drill-down>
+2. ...
+
+---
+
+### 2. <Next Drill-Down Title> — <Skill Name>
+...(same structure)
+
+## Cross-Investigation Correlation
+
+<This section is the KEY differentiator from individual reports. Synthesize connections 
+discovered ACROSS drill-downs — patterns that only become visible when looking at the 
+full investigation as a whole.>
+
+| Connection | Evidence | Drill-Downs | Implication |
+|-----------|----------|-------------|-------------|
+| <pattern> | <specific data points from 2+ investigations> | #1 + #3 | <what this means> |
+
+<Narrative paragraph explaining the most significant cross-investigation insight.
+Example: "The device investigation (#1) revealed 31 inbound RDP connections from 15 unique IPs, 
+while the IoC investigation (#3) confirmed IP 20.114.11.113 as an automated brute-force source. 
+The exposure investigation (#2) showed the device has 102 unpatched CVEs including critical OpenSSL 
+vulnerabilities in Azure extensions, meaning a successful RDP compromise could leverage these 
+for lateral movement.">
+
+If no cross-investigation connections exist: `✅ No cross-investigation correlations identified — each finding is independent.`
+
+## Consolidated Recommendations
+
+<Merge and deduplicate recommendations from ALL sources — pulse + drill-downs.
+Prioritize by risk level and actionability. Group by theme (e.g., Identity, Endpoint, Exposure).>
+
+| Priority | Recommendation | Source | Risk |
+|----------|---------------|--------|------|
+| 🔴 1 | <action> | Q<N> + Drill-Down #<N> | <level> |
+| 🟠 2 | <action> | Drill-Down #<N> | <level> |
+| ... | ... | ... | ... |
+
+## 📂 Recommended Query Files
+
+<Same as inline report — manifest-driven query file recommendations>
+
+## Appendix: Investigation Timeline
+
+| Time | Action | Key Result |
+|------|--------|-----------|
+| <HH:MM> | Threat Pulse scan started | 12 queries across 9 domains |
+| <HH:MM> | Scan complete | <N> 🔴, <N> 🟠, <N> 🟡, <N> ✅ |
+| <HH:MM> | Drill-Down #1: <title> | <1-line result> |
+| ... | ... | ... |
+| <HH:MM> | Report saved | reports/threat-pulse/<filename>.md |
+```
+
+### Template Rules
+
+1. **Executive Summary is mandatory** — it must synthesize across ALL investigations, not just the pulse. If drill-downs changed the risk picture, the executive summary must reflect that.
+2. **Drill-Down sections are NOT raw dumps.** Each must be a structured summary with back-references to the triggering pulse query (`Triggered by: Q<N>`) and forward-references to related drill-downs.
+3. **Cross-Investigation Correlation is the critical section.** This is where patterns that span multiple investigations are surfaced — connections only visible from the full investigation. If no connections exist, state that explicitly.
+4. **Consolidated Recommendations deduplicates.** If the pulse and a drill-down both recommend the same action, it appears ONCE with both sources cited.
+5. **Investigation Timeline provides audit trail.** Chronological log of every action taken during the session.
+6. **Drill-down data priority:** Use session memory (`/memories/session/threat-pulse-drilldowns.md`) as the primary source for drill-down findings. Supplement with conversation context where available.
+
+### Quality Checklist (Combined Report)
+
+- [ ] Executive Summary references findings from both pulse AND drill-downs
+- [ ] Every drill-down has a structured subsection (not raw output)
+- [ ] Each drill-down subsection has `Triggered by: Q<N>` back-reference
+- [ ] Cross-Investigation Correlation section exists (either with connections or explicit "none found")
+- [ ] Consolidated Recommendations are deduplicated across all sources
+- [ ] Investigation Timeline is chronologically accurate
+- [ ] No fabricated data — all findings cite specific evidence
+
+---
+
 ## Known Pitfalls
 
 | Pitfall | Mitigation |
@@ -1033,6 +1179,7 @@ Insert `📂 Recommended Query Files` section after **Recommended Actions** in t
 | Q5 takes ~35s (97d lookback) | Acceptable — runs in parallel. Only query needing Data Lake |
 | Q7 capped at `ago(30d)` | AH Graph API limit. Use `queries/endpoint/rare_process_chains.md` via Data Lake for 90d |
 | Q6 drift scores | Computed in-query — do NOT recompute LLM-side |
+| Q9 drill-down: CloudAppEvents identity filtering | `AccountId` and `AccountObjectId` are **Entra ObjectId GUIDs**, NOT UPNs. Filtering by UPN returns 0 results silently. Use `AccountDisplayName` for display-name matching, or resolve UPN→ObjectId via Graph API first. NEVER use `tostring(RawEventData) has "UPN"` — it causes query cancellation on this high-volume table |
 
 > **Schema pitfalls** (column names, dynamic fields, `parse_json` patterns) are covered in `copilot-instructions.md` Known Table Pitfalls. Refer there for `SecurityAlert.Status`, `ExposureGraphNodes.NodeProperties`, timestamp columns, and `AuditLogs.InitiatedBy`.
 
