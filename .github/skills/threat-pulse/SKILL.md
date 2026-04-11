@@ -286,23 +286,32 @@ SecurityIncident
        OwnerUPN = tostring(Owner.userPrincipalName)
 | extend Techniques = set_difference(Techniques, dynamic([""]))
 | extend Tactics = set_difference(Tactics, dynamic([""]))
-| extend AgeDays = datetime_diff('day', now(), CreatedTime)
+| extend AgeDisplay = case(
+    datetime_diff('minute', now(), CreatedTime) < 60, strcat(datetime_diff('minute', now(), CreatedTime), "m ago"),
+    datetime_diff('hour', now(), CreatedTime) < 24, strcat(datetime_diff('hour', now(), CreatedTime), "h ago"),
+    strcat(datetime_diff('day', now(), CreatedTime), "d ago"))
 | extend PortalUrl = strcat("https://security.microsoft.com/incidents/", ProviderIncidentId)
-| order by Severity asc, AgeDays desc
-| take 15
+| project ProviderIncidentId, Title, Severity, AgeDisplay, AlertCount, 
+    OwnerUPN, Tactics, Techniques, Accounts, Devices, PortalUrl, AlertNames, CreatedTime
+| order by bin(CreatedTime, 1d) desc, AlertCount desc
+| take 10
 ```
 
-**Purpose:** Identifies the top 15 open high-severity incidents, ranked by age. Joins SecurityAlert for MITRE tactic and technique ID visibility, plus extracts `Accounts` (UPNs or AAD ObjectIds) and `Devices` (hostnames) from alert entities for cross-query correlation with Q2 (identity risk), Q6/Q7 (endpoint drift/rare processes), Q4 (spray targets), and Q12 (CVE exposure). Flags unassigned incidents (empty OwnerUPN) and incident age debt (>30 days old).
+**Purpose:** Identifies the top 10 newest open high-severity incidents, sorted by day (newest first) then by alert count (highest complexity first within each day). Joins SecurityAlert for MITRE tactic and technique ID visibility, plus extracts `Accounts` (UPNs or AAD ObjectIds) and `Devices` (hostnames) from alert entities for cross-query correlation with Q2 (identity risk), Q6/Q7 (endpoint drift/rare processes), Q4 (spray targets), and Q12 (CVE exposure). Flags unassigned incidents (empty OwnerUPN).
+
+**Sort logic:** `bin(CreatedTime, 1d) desc, AlertCount desc` — groups incidents by calendar day (newest day first), then ranks by correlated alert count within each day. This ensures the most complex recent incidents surface first, while older backlog naturally drops off.
 
 **Entity extraction rules:**
 - **Accounts:** Prefers `Name@UPNSuffix` (lowercased); falls back to `AadUserId` (GUID) when no UPN suffix. Service accounts without domains naturally drop.
 - **Devices:** `HostName` (lowercased) for case-insensitive matching against Q6/Q7 `DeviceName`.
 - Both capped at 5 per incident to limit output size.
 
+**Output columns:** `ProviderIncidentId` (linked via `PortalUrl`), `Title`, `Severity`, `AgeDisplay` (relative time: "3m ago", "2h ago", "1d ago"), `AlertCount`, `OwnerUPN`, `Tactics`, `Techniques`, `Accounts`, `Devices`. `AlertNames` and `CreatedTime` are projected for LLM context but not rendered as table columns.
+
 **Verdict logic:**
-- 🔴 Escalate: Any incident with `AgeDays > 30` AND empty `OwnerUPN`
-- 🟠 Investigate: Any incident with `AgeDays > 14` or `AlertCount > 10`
-- 🟡 Monitor: Open incidents exist but are assigned and recently triaged
+- 🔴 Escalate: 5+ new High/Critical incidents in 24h, or any incident with `AlertCount > 50`, or any unassigned incident with CredentialAccess/LateralMovement tactics
+- 🟠 Investigate: Any unassigned incident, or `AlertCount > 10`, or multiple incidents in <6h
+- 🟡 Monitor: Open incidents exist but are assigned and low alert count
 - ✅ Clear: 0 open High/Critical incidents (Q1b closed summary still renders as context)
 
 ---
@@ -916,7 +925,7 @@ Insert `📂 Recommended Query Files` section after **Recommended Actions** in t
 5. **🎯 Recommended Actions:** Prioritized table with action, trigger query, and drill-down skill.
 6. **📂 Recommended Query Files:** Per the Report Output Block procedure above. For 🟡-only verdicts, use "📂 Proactive Hunting Suggestions" header instead. Omit entirely when all ✅.
 
-**Q1 column format:** `| Incident | Title | Age (days) | Alerts | Owner | Tactics | Techniques | Accounts | Devices |` — Unassigned shows `⚠️ Unassigned`. `Accounts` and `Devices` are entity arrays (max 5 each) for cross-query correlation — render inline as comma-separated values.
+**Q1 column format:** `| Incident | Title | Age | Alerts | Owner | Tactics | Accounts | Devices |` — Unassigned shows `⚠️ Unassigned`. `Age` uses relative time from `AgeDisplay` (e.g., "3m ago", "2h ago", "1d ago"). `Accounts` and `Devices` are entity arrays (max 5 each) for cross-query correlation — render inline as comma-separated values.
 
 **Q1b closed summary:** Classification breakdown table + severity + MITRE tactics/techniques from TP closures. Always render even when Q1 is ✅.
 
