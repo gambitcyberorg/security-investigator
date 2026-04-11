@@ -254,6 +254,12 @@ SecurityIncident
 | summarize arg_max(TimeGenerated, *) by IncidentNumber
 | where Status in ("New", "Active")
 | where Severity in ("High", "Critical")
+| extend ParsedLabels = parse_json(Labels)
+| extend Tags = set_difference(make_set_if(tostring(ParsedLabels[0].labelName), array_length(ParsedLabels) > 0), dynamic([""]))
+| mv-apply Label = ParsedLabels on (
+    summarize Tags = make_set(tostring(Label.labelName), 5)
+)
+| extend Tags = set_difference(Tags, dynamic([""]))
 | mv-expand AlertId = AlertIds | extend AlertId = tostring(AlertId)
 | join kind=leftouter (
     SecurityAlert
@@ -281,7 +287,8 @@ SecurityIncident
     AlertNames = make_set(AlertName, 5),
     AlertCount = dcount(AlertId),
     Accounts = make_set_if(AccountUPN, isnotempty(AccountUPN), 5),
-    Devices = make_set_if(HostName, isnotempty(HostName), 5)
+    Devices = make_set_if(HostName, isnotempty(HostName), 5),
+    Tags = take_any(Tags)
     by ProviderIncidentId, Title, Severity, Status, CreatedTime,
        OwnerUPN = tostring(Owner.userPrincipalName)
 | extend Techniques = set_difference(Techniques, dynamic([""]))
@@ -292,21 +299,22 @@ SecurityIncident
     strcat(datetime_diff('day', now(), CreatedTime), "d ago"))
 | extend PortalUrl = strcat("https://security.microsoft.com/incidents/", ProviderIncidentId)
 | project ProviderIncidentId, Title, Severity, AgeDisplay, AlertCount, 
-    OwnerUPN, Tactics, Techniques, Accounts, Devices, PortalUrl, AlertNames, CreatedTime
+    OwnerUPN, Tactics, Techniques, Accounts, Devices, Tags, PortalUrl, AlertNames, CreatedTime
 | order by bin(CreatedTime, 1d) desc, AlertCount desc
 | take 10
 ```
 
-**Purpose:** Identifies the top 10 newest open high-severity incidents, sorted by day (newest first) then by alert count (highest complexity first within each day). Joins SecurityAlert for MITRE tactic and technique ID visibility, plus extracts `Accounts` (UPNs or AAD ObjectIds) and `Devices` (hostnames) from alert entities for cross-query correlation with Q2 (identity risk), Q6/Q7 (endpoint drift/rare processes), Q4 (spray targets), and Q12 (CVE exposure). Flags unassigned incidents (empty OwnerUPN).
+**Purpose:** Identifies the top 10 newest open high-severity incidents, sorted by day (newest first) then by alert count (highest complexity first within each day). Joins SecurityAlert for MITRE tactic and technique ID visibility, plus extracts `Accounts` (UPNs or AAD ObjectIds) and `Devices` (hostnames) from alert entities for cross-query correlation with Q2 (identity risk), Q6/Q7 (endpoint drift/rare processes), Q4 (spray targets), and Q12 (CVE exposure). Extracts `Tags` from incident labels (both AutoAssigned ML classifications like `Credential Phish`, `BEC Fraud`, `Defender Experts` and User-applied SOC workflow tags). Flags unassigned incidents (empty OwnerUPN).
 
 **Sort logic:** `bin(CreatedTime, 1d) desc, AlertCount desc` — groups incidents by calendar day (newest day first), then ranks by correlated alert count within each day. This ensures the most complex recent incidents surface first, while older backlog naturally drops off.
 
 **Entity extraction rules:**
 - **Accounts:** Prefers `Name@UPNSuffix` (lowercased); falls back to `AadUserId` (GUID) when no UPN suffix. Service accounts without domains naturally drop.
 - **Devices:** `HostName` (lowercased) for case-insensitive matching against Q6/Q7 `DeviceName`.
-- Both capped at 5 per incident to limit output size.
+- **Tags:** Extracted from `Labels` (dynamic array of `{labelName, labelType}` objects). Includes both `AutoAssigned` (Defender ML) and `User` (SOC analyst/automation rule) tags.
+- Accounts, Devices, and Tags each capped at 5 per incident to limit output size.
 
-**Output columns:** `ProviderIncidentId` (linked via `PortalUrl`), `Title`, `Severity`, `AgeDisplay` (relative time: "3m ago", "2h ago", "1d ago"), `AlertCount`, `OwnerUPN`, `Tactics`, `Techniques`, `Accounts`, `Devices`. `AlertNames` and `CreatedTime` are projected for LLM context but not rendered as table columns.
+**Output columns:** `ProviderIncidentId` (linked via `PortalUrl`), `Title`, `Severity`, `AgeDisplay` (relative time: "3m ago", "2h ago", "1d ago"), `AlertCount`, `OwnerUPN`, `Tactics`, `Techniques`, `Accounts`, `Devices`, `Tags`. `AlertNames` and `CreatedTime` are projected for LLM context but not rendered as table columns.
 
 **Verdict logic:**
 - 🔴 Escalate: 5+ new High/Critical incidents in 24h, or any incident with `AlertCount > 50`, or any unassigned incident with CredentialAccess/LateralMovement tactics
@@ -925,7 +933,7 @@ Insert `📂 Recommended Query Files` section after **Recommended Actions** in t
 5. **🎯 Recommended Actions:** Prioritized table with action, trigger query, and drill-down skill.
 6. **📂 Recommended Query Files:** Per the Report Output Block procedure above. For 🟡-only verdicts, use "📂 Proactive Hunting Suggestions" header instead. Omit entirely when all ✅.
 
-**Q1 column format:** `| Incident | Title | Age | Alerts | Owner | Tactics | Accounts | Devices |` — Unassigned shows `⚠️ Unassigned`. `Age` uses relative time from `AgeDisplay` (e.g., "3m ago", "2h ago", "1d ago"). `Accounts` and `Devices` are entity arrays (max 5 each) for cross-query correlation — render inline as comma-separated values.
+**Q1 column format:** `| Incident | Title | Age | Alerts | Owner | Tactics | Accounts | Devices | Tags |` — Unassigned shows `⚠️ Unassigned`. `Age` uses relative time from `AgeDisplay` (e.g., "3m ago", "2h ago", "1d ago"). `Accounts`, `Devices`, and `Tags` are entity/label arrays (max 5 each) — render inline as comma-separated values.
 
 **Q1b closed summary:** Classification breakdown table + severity + MITRE tactics/techniques from TP closures. Always render even when Q1 is ✅.
 
