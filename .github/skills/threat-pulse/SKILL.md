@@ -465,18 +465,40 @@ IdentityPosture
 **Tool:** `RunAdvancedHuntingQuery`
 
 ```kql
-let EntraSpray = EntraIdSignInEvents
+// Step 1: Count spray-specific failures per IP
+let SprayFailures = EntraIdSignInEvents
 | where Timestamp > ago(7d)
 | where ErrorCode in (50126, 50053, 50057)
 | summarize
     FailedAttempts = count(),
     TargetUsers = dcount(AccountUpn),
     SampleTargets = make_set(AccountUpn, 5),
-    Protocols = make_set(Application, 3),
+    FailedApps = make_set(Application, 3),
     Countries = make_set(Country, 3)
     by SourceIP = IPAddress
-| where TargetUsers >= 5
-| extend Surface = "Entra ID";
+| where TargetUsers >= 5;
+// Step 2: Get full traffic profile for flagged IPs (success context)
+let IPTrafficProfile = EntraIdSignInEvents
+| where Timestamp > ago(7d)
+| where IPAddress in ((SprayFailures | project SourceIP))
+| summarize
+    TotalSignIns = count(),
+    Successes = countif(ErrorCode == 0),
+    TotalDistinctUsers = dcount(AccountUpn),
+    TotalDistinctApps = dcount(Application)
+    by SourceIP = IPAddress;
+// Step 3: Join and filter — eliminate shared infrastructure false positives
+let EntraResults = SprayFailures
+| join kind=inner IPTrafficProfile on SourceIP
+| extend 
+    SprayRatio = round(FailedAttempts * 100.0 / max_of(TotalSignIns, 1), 1),
+    SuccessRate = round(Successes * 100.0 / max_of(TotalSignIns, 1), 1)
+| where SprayRatio >= 1.0 and TotalDistinctApps < 50
+| extend Surface = "Entra ID"
+| project SourceIP, FailedAttempts, TargetUsers, SampleTargets, 
+    Protocols = FailedApps, Countries, Surface,
+    TotalSignIns, Successes, SprayRatio, SuccessRate, TotalDistinctApps;
+// Endpoint brute-force (unchanged — no success context available)
 let EndpointBrute = DeviceLogonEvents
 | where Timestamp > ago(7d)
 | where ActionType == "LogonFailed"
@@ -490,15 +512,21 @@ let EndpointBrute = DeviceLogonEvents
     Countries = dynamic(["—"])
     by SourceIP = RemoteIP
 | where FailedAttempts >= 10
-| extend Surface = "Endpoint (RDP/SSH)";
-union EntraSpray, EndpointBrute
-| order by TargetUsers desc, FailedAttempts desc
+| extend Surface = "Endpoint (RDP/SSH)",
+    TotalSignIns = FailedAttempts, Successes = long(0), 
+    SprayRatio = 100.0, SuccessRate = 0.0, TotalDistinctApps = long(0);
+union EntraResults, EndpointBrute
+| order by SprayRatio desc, TargetUsers desc, FailedAttempts desc
 | take 15
 ```
 
-**Purpose:** Detects password spray (1 IP → many users, MITRE T1110.003) and brute-force (1 IP → high failure count, T1110.001) across two surfaces:
-- **Entra ID:** Uses `EntraIdSignInEvents` (Advanced Hunting) which merges interactive + non-interactive sign-ins into a single table, providing broader coverage than SigninLogs alone. Error codes: 50126=bad password, 50053=locked account, 50057=disabled account. An IP targeting ≥5 distinct users with these errors is a strong spray signal. `Protocols` reveals if legacy auth (POP/IMAP/SMTP) is being targeted.
-- **Endpoint:** RDP (`RemoteInteractive`) and SSH/SMB (`Network`) failed logons on MDE-enrolled devices. Threshold of ≥10 failures catches brute-force against exposed endpoints.
+**Purpose:** Detects password spray (1 IP → many users, MITRE T1110.003) and brute-force (1 IP → high failure count, T1110.001) across two surfaces, with **shared infrastructure false-positive filtering**:
+- **Entra ID:** Uses `EntraIdSignInEvents` (Advanced Hunting) which merges interactive + non-interactive sign-ins into a single table. Error codes: 50126=bad password, 50053=locked account, 50057=disabled account. The query enriches failure data with the IP's full traffic profile to compute `SprayRatio` (spray failures ÷ total sign-ins) and `TotalDistinctApps`. Two filters eliminate corporate proxies, VPN concentrators, and Azure gateways:
+  - **`SprayRatio >= 1.0`** — spray failures must be ≥1% of the IP's total sign-in volume. A proxy with 500K sign-ins and 77 spray errors → 0.01% → filtered. A pure attacker with 77 failures and 0 successes → 100% → kept.
+  - **`TotalDistinctApps < 50`** — IPs serving 50+ distinct applications are shared infrastructure. Real spray targets 1–3 apps.
+- **Endpoint:** RDP (`RemoteInteractive`) and SSH/SMB (`Network`) failed logons on MDE-enrolled devices. Threshold of ≥10 failures. No success context available in DeviceLogonEvents for filtering.
+
+**Output columns:** `SourceIP`, `FailedAttempts`, `TargetUsers`, `SampleTargets`, `Protocols`, `Countries`, `Surface`, `TotalSignIns`, `Successes`, `SprayRatio`, `SuccessRate`, `TotalDistinctApps`. The `SprayRatio` and `TotalDistinctApps` columns provide immediate false-positive triage context.
 
 **Verdict logic:**
 - 🔴 Escalate: Any IP targeting >25 Entra users OR >100 endpoint failures from a single IP
