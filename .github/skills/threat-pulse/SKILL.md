@@ -76,11 +76,15 @@ Incidents: `XDR_INCIDENT_BASE` + `ProviderIncidentId`.
 
 8. **⛔ MANDATORY: Query File Recommendations (tiered)** — After assigning verdicts and BEFORE rendering the final report, execute the [Query File Recommendations](#query-file-recommendations) procedure. Skip only when ALL verdicts are ✅.
 
+9. **⛔ MANDATORY: Context-aware lookback expansion** — Before executing any Phase 4 drill-down, check whether the target entity has evidence (incidents, `adminConfirmedUserCompromised`, offline risk events) that predates the Threat Pulse lookback window. If so, expand the drill-down's lookback to `max(30d, incident_age)` for AH queries, or `max(90d, incident_age)` for Data Lake queries. See [Phase 4 Lookback Expansion](#-mandatory-context-aware-lookback-expansion) for the full decision table.
+
 | Highest Verdict | Query Files | Proactive Skills | Report Section |
 |----------------|-------------|-----------------|----------------|
 | 🔴 or 🟠 | Top 3–5, entity-specific prompts | — | `📂 Recommended Query Files` |
 | 🟡 (no 🔴/🟠) | Top 1–2, broader prompts | Up to 3 posture skills | `📂 Proactive Hunting Suggestions` |
 | All ✅ | Skip | Skip | Omit entirely |
+
+**Rule 8 Tier Reference:** The table above maps to rule 8 (query file recommendations).
 
 ---
 
@@ -147,7 +151,7 @@ Estimated time: ~2–4 minutes
 2. Run cross-query correlation checks (see rule 7 above)
 3. Assign verdicts to each domain (🔴 Escalate / 🟠 Investigate / 🟡 Monitor / ✅ Clear)
 4. Generate prioritized recommendations with drill-down skill references
-5. **⛔ STOP — Recommendation Gate:** Before proceeding to step 6, run the [Query File Recommendations](#query-file-recommendations) procedure matching the highest verdict tier (see Rule 9 table). Skip only when all verdicts are ✅. **Do NOT proceed to step 6 until this gate is resolved.**
+5. **⛔ STOP — Recommendation Gate:** Before proceeding to step 6, run the [Query File Recommendations](#query-file-recommendations) procedure matching the highest verdict tier (see Rule 8 table). Skip only when all verdicts are ✅. **Do NOT proceed to step 6 until this gate is resolved.**
 6. Render output in requested mode (report MUST include the recommendations section if step 5 triggered it)
 
 ### Phase 4: Interactive Follow-Up Loop
@@ -177,6 +181,16 @@ Estimated time: ~2–4 minutes
 | Email threats in Q8 | `email-threat-posture` | `Run email threat posture report` |
 | CVE in Q12 | `exposure-investigation` | `Run vulnerability report for <CVE>` |
 | Incident in Q1 | `incident-investigation` | `Investigate incident <ProviderIncidentId>` |
+
+**⛔ MANDATORY: Context-Aware Lookback Expansion**
+
+Drill-downs must cover the **full attack timeline**, which may predate the 7d pulse window. Before executing any follow-up, expand lookback when the target entity has:
+
+- `adminConfirmedUserCompromised` or closed TruePositive incident → **30d (AH) / 90d (DL)**
+- Incident `CreatedTime` > 7d ago → **match incident age** (up to 30d AH)
+- Offline risk detections or risk events spanning >3 days → **30d**
+
+For query file prompts, substitute `ago(7d)` with `ago(30d)`. Note expansions in output: *"⏱️ Lookback expanded to 30d — incident #XXXXX predates the 7d pulse window"*.
 
 **Procedure:**
 1. Build the **initial prompt pool** by combining:
