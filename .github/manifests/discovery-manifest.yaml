@@ -4,7 +4,7 @@
 # Slim version: title, path, domains, mitre, prompt only.
 # Use --full flag to generate the verbose manifest with tables, keywords, platform, timeframe.
 
-generated: '2026-04-11T15:40:56Z'
+generated: '2026-04-11T20:16:58Z'
 valid_domains:
 - admin
 - cloud
@@ -478,6 +478,26 @@ queries:
   - TA0003
   - TA0004
   - TA0008
+- title: Storm-2755 "Payroll Pirate" — AiTM Campaign Targeting Canadian Employees
+  path: queries/identity/storm_2755_payroll_pirate.md
+  domains:
+  - identity
+  - email
+  - cloud
+  mitre:
+  - T1557
+  - T1539
+  - T1550.001
+  - T1564.008
+  - T1114.003
+  - T1087
+  - T1657
+  - T1566.002
+  - TA0001
+  - TA0003
+  - TA0005
+  - TA0006
+  - TA0040
 - title: Microsoft Teams — Threat Defense Program & Hunting Playbook
   path: queries/identity/teams_threat_defense_program.md
   domains:
