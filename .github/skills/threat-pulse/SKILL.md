@@ -242,9 +242,9 @@ Estimated time: ~2–4 minutes
 
 > **All queries below are verified against live Sentinel/Defender XDR schemas. Use them exactly as written. Lookback periods use `ago(Nd)` — substitute the user's preferred lookback where noted.**
 
-### Query 1: Open High-Severity Incidents with MITRE Techniques
+### Query 1: Open High-Severity Incidents with MITRE Techniques & Entities
 
-🔴 **Incident hygiene** — Surfaces unresolved High/Critical incidents with age, owner, alert count, MITRE tactics, and MITRE technique IDs.
+🔴 **Incident hygiene** — Surfaces unresolved High/Critical incidents with age, owner, alert count, MITRE tactics, MITRE technique IDs, and extracted entity names (accounts + devices) for cross-query correlation.
 
 **Tool:** `RunAdvancedHuntingQuery`
 
@@ -258,7 +258,17 @@ SecurityIncident
 | join kind=leftouter (
     SecurityAlert
     | summarize arg_max(TimeGenerated, *) by SystemAlertId
-    | project SystemAlertId, Tactics, Techniques, AlertName, AlertSeverity
+    | extend ParsedEntities = parse_json(Entities)
+    | mv-expand Entity = ParsedEntities
+    | extend EntityType = tostring(Entity.Type),
+        AccountUPN = case(
+            tostring(Entity.Type) == "account" and isnotempty(tostring(Entity.UPNSuffix)),
+            tolower(strcat(tostring(Entity.Name), "@", tostring(Entity.UPNSuffix))),
+            tostring(Entity.Type) == "account" and isnotempty(tostring(Entity.AadUserId)),
+            tostring(Entity.AadUserId),
+            ""),
+        HostName = iff(tostring(Entity.Type) == "host", tolower(tostring(Entity.HostName)), "")
+    | project SystemAlertId, Tactics, Techniques, AlertName, AlertSeverity, AccountUPN, HostName
 ) on $left.AlertId == $right.SystemAlertId
 | mv-expand Technique = parse_json(Techniques)
 | extend Technique = tostring(Technique)
@@ -269,7 +279,9 @@ SecurityIncident
     Tactics = make_set(Tactic),
     Techniques = make_set(Technique),
     AlertNames = make_set(AlertName, 5),
-    AlertCount = dcount(AlertId)
+    AlertCount = dcount(AlertId),
+    Accounts = make_set_if(AccountUPN, isnotempty(AccountUPN), 5),
+    Devices = make_set_if(HostName, isnotempty(HostName), 5)
     by ProviderIncidentId, Title, Severity, Status, CreatedTime,
        OwnerUPN = tostring(Owner.userPrincipalName)
 | extend Techniques = set_difference(Techniques, dynamic([""]))
@@ -280,7 +292,12 @@ SecurityIncident
 | take 15
 ```
 
-**Purpose:** Identifies the top 15 open high-severity incidents, ranked by age. Joins SecurityAlert for MITRE tactic and technique ID visibility. Flags unassigned incidents (empty OwnerUPN) and incident age debt (>30 days old).
+**Purpose:** Identifies the top 15 open high-severity incidents, ranked by age. Joins SecurityAlert for MITRE tactic and technique ID visibility, plus extracts `Accounts` (UPNs or AAD ObjectIds) and `Devices` (hostnames) from alert entities for cross-query correlation with Q2 (identity risk), Q6/Q7 (endpoint drift/rare processes), Q4 (spray targets), and Q12 (CVE exposure). Flags unassigned incidents (empty OwnerUPN) and incident age debt (>30 days old).
+
+**Entity extraction rules:**
+- **Accounts:** Prefers `Name@UPNSuffix` (lowercased); falls back to `AadUserId` (GUID) when no UPN suffix. Service accounts without domains naturally drop.
+- **Devices:** `HostName` (lowercased) for case-insensitive matching against Q6/Q7 `DeviceName`.
+- Both capped at 5 per incident to limit output size.
 
 **Verdict logic:**
 - 🔴 Escalate: Any incident with `AgeDays > 30` AND empty `OwnerUPN`
@@ -805,11 +822,14 @@ After all queries complete, check these correlation patterns and escalate priori
 
 | Pattern | Queries | Implication | Action |
 |---------|---------|-------------|--------|
+| Incident account matches risky identity | Q1 `Accounts` ∩ Q2 `AccountUpn` | Incident involves user already flagged AtRisk/Compromised — corroborated signal | Escalate to 🔴 |
+| Incident device matches drifting endpoint | Q1 `Devices` ∩ Q6 `DeviceName` | Incident target has behavioral anomalies on endpoint | Escalate to 🔴 |
+| Incident device has exploitable CVE | Q1 `Devices` ∩ Q12 `DeviceName` | Incident device is vulnerable to active exploitation | Escalate to 🔴 |
+| Spray target already in incident | Q4 targets ∩ Q1 `Accounts` | Spray target is already involved in an active incident | Escalate to 🔴 |
 | SPN drift AND unusual credential/consent activity | Q5 + Q9 | App credential abuse / persistence | Escalate to 🔴 |
 | Device with rare process chain AND exploitable CVE | Q7 + Q12 | Potential active exploitation | Escalate to 🔴 |
-| Incident entity matches risky identity | Q1 + Q2 | Known incident involves user already flagged AtRisk/Compromised | Link findings in report |
-| Closed TP tactics match active findings | Q1b + Q2/Q7/Q8 | Same attack pattern recurring despite recent closures | Escalate to 🟠, note recurrence |
 | Spray IP target already flagged as risky | Q4 + Q2 | Spray target has active Identity Protection risk | Escalate to 🔴 |
+| Closed TP tactics match active findings | Q1b + Q2/Q7/Q8 | Same attack pattern recurring despite recent closures | Escalate to 🟠, note recurrence |
 | Mailbox rule manipulation AND email threats | Q9 + Q8 | Potential email exfiltration setup following phishing | Escalate to 🔴 |
 
 ---
@@ -896,7 +916,7 @@ Insert `📂 Recommended Query Files` section after **Recommended Actions** in t
 5. **🎯 Recommended Actions:** Prioritized table with action, trigger query, and drill-down skill.
 6. **📂 Recommended Query Files:** Per the Report Output Block procedure above. For 🟡-only verdicts, use "📂 Proactive Hunting Suggestions" header instead. Omit entirely when all ✅.
 
-**Q1 column format:** `| Incident | Title | Age (days) | Alerts | Owner | Tactics | Techniques |` — Unassigned shows `⚠️ Unassigned`.
+**Q1 column format:** `| Incident | Title | Age (days) | Alerts | Owner | Tactics | Techniques | Accounts | Devices |` — Unassigned shows `⚠️ Unassigned`. `Accounts` and `Devices` are entity arrays (max 5 each) for cross-query correlation — render inline as comma-separated values.
 
 **Q1b closed summary:** Classification breakdown table + severity + MITRE tactics/techniques from TP closures. Always render even when Q1 is ✅.
 
