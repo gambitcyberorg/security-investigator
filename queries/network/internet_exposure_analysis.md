@@ -2,7 +2,7 @@
 
 **Created:** 2026-03-31  
 **Platform:** Both  
-**Tables:** ExposureGraphNodes, ExposureGraphEdges, DeviceNetworkEvents, DeviceNetworkInfo  
+**Tables:** ExposureGraphNodes, ExposureGraphEdges, DeviceInfo, DeviceNetworkEvents, DeviceNetworkInfo  
 **Keywords:** internet exposure, public IP, customer-facing, inbound connections, RDP, SSH, firewall rules, NSG, attack surface, listening ports, exposure score, network scanning  
 **MITRE:** T1190, T1133, T1021.001, T1021.004, TA0001, TA0043  
 **Domains:** exposure  
@@ -12,7 +12,15 @@
 
 ## Overview
 
-Combines Microsoft Security Exposure Management (ExposureGraph) topology with MDE network telemetry to identify and validate internet-facing assets. The ExposureGraph provides the **theoretical** attack surface (what firewall rules allow), while DeviceNetworkEvents provides the **observed** attack surface (what connections are actually happening).
+Combines three tiers of internet exposure intelligence to identify, validate, and prioritize internet-facing assets:
+
+| Tier | Source | Signal | Reliability |
+|------|--------|--------|-------------|
+| **1. Authoritative** | `DeviceInfo.IsInternetFacing` | MDE-confirmed via external scan or observed inbound connection. Auto-expires after 48h of no activity ([MS Docs](https://learn.microsoft.com/en-us/defender-endpoint/internet-facing-devices#use-advanced-hunting)) | Highest — ground truth from Microsoft's external scanning infrastructure |
+| **2. Theoretical** | ExposureGraph (`isCustomerFacing`, firewall rules) | What topology/config ALLOWS — `isCustomerFacing` is a business-function flag, NOT a confirmed internet exposure indicator | Medium — may overcount (public IP + open rules ≠ reachable) |
+| **3. Observed** | `DeviceNetworkEvents` inbound connections | What traffic is ACTUALLY arriving from public IPs | High for confirmation, but requires active attackers/scanners to generate signal |
+
+**Start with Tier 1 (DeviceInfo)** for the authoritative list, then enrich with Tier 2 (ExposureGraph) for topology context and Tier 3 (DeviceNetworkEvents) for traffic validation.
 
 ### Data Source Summary
 
@@ -20,6 +28,7 @@ Combines Microsoft Security Exposure Management (ExposureGraph) topology with MD
 |-------|--------|-------------------|
 | `ExposureGraphNodes` | Exposure Management | Which devices/IPs are flagged as customer-facing, exposure scores, public IPs |
 | `ExposureGraphEdges` | Exposure Management | Firewall/NSG rules: what ports are allowed from what CIDRs |
+| `DeviceInfo` | MDE | **`IsInternetFacing`** (bool) — authoritative internet-facing classification via external scans + observed inbound connections. `AdditionalFields` provides reason, port, public IP, protocol, last-seen. Auto-expires after 48h. [MS Docs](https://learn.microsoft.com/en-us/defender-endpoint/internet-facing-devices) |
 | `DeviceNetworkEvents` | MDE | Actual inbound connections accepted, connection failures (probes), listening ports |
 | `DeviceNetworkInfo` | MDE | Network adapter config: public IPs, `IsConnectedToInternet` flag, network categories |
 
@@ -27,7 +36,7 @@ Combines Microsoft Security Exposure Management (ExposureGraph) topology with MD
 
 **CRITICAL:** Filtering `RemoteIPType == "Public"` misses connections to services using IPv4-mapped IPv6 sockets (e.g., IIS dual-stack listeners). When IIS accepts an IPv4 connection through its `::ffff:` binding, MDE classifies `RemoteIPType` as `FourToSixMapping` — even though the source IP is a public internet address. This means **queries filtering only on `"Public"` will report 0 inbound web connections** while `W3CIISLog` shows hundreds of requests from the same IPs on the same port.
 
-**Fix:** Use `RemoteIPType in ("Public", "FourToSixMapping")` for all inbound connection queries in this file. Alternatively, use RFC1918 exclusion filters (as in `queries/endpoint/endpoint_failed_connections.md` Query 2) which catch all non-private IPs regardless of MDE's type classification.
+**Fix:** When querying environments with IIS dual-stack listeners (or any IPv4-mapped IPv6 sockets), add `FourToSixMapping` to the filter: `RemoteIPType in ("Public", "FourToSixMapping")`. Alternatively, use RFC1918 exclusion filters (as in `queries/endpoint/endpoint_failed_connections.md` Query 2) which catch all non-private IPs regardless of MDE's type classification. The queries below use `RemoteIPType == "Public"` for simplicity — add `FourToSixMapping` if your environment uses dual-stack web services.
 
 ### Key ActionTypes in DeviceNetworkEvents
 
@@ -40,9 +49,65 @@ Combines Microsoft Security Exposure Management (ExposureGraph) topology with MD
 
 ---
 
-## Query 1: Customer-Facing Devices (Exposure Graph)
+## Query 1: MDE Internet-Facing Devices (DeviceInfo)
 
-Devices flagged as internet-facing by Exposure Management, with exposure scores and public IPs.
+Authoritative internet-facing classification from Microsoft Defender for Endpoint. MDE flags devices as internet-facing based on **external scans** (Microsoft probes detecting reachable ports) and **observed inbound connections** (actual incoming traffic from public IPs). The tag auto-expires after 48 hours of no activity — stale data is automatically cleaned. This is the ground-truth source for internet exposure and should be checked **before** ExposureGraph topology queries.
+
+**Reference:** [Internet-facing devices — Microsoft Learn](https://learn.microsoft.com/en-us/defender-endpoint/internet-facing-devices#use-advanced-hunting)
+
+<!-- cd-metadata
+cd_ready: true
+schedule: "24H"
+category: "InitialAccess"
+title: "Internet-facing device {{DeviceName}} detected via {{InternetFacingReason}}"
+impactedAssets:
+  - type: device
+    identifier: deviceName
+recommendedActions: "Verify device should be internet-facing. Review exposed port and protocol. Check NSG/firewall rules. Investigate the InternetFacingReason — PublicScan (externally detected) vs InboundConnection (observed traffic)."
+adaptation_notes: "Remove summarize — convert to per-DeviceId rows. Add DeviceId column. Consider filtering to critical assets only by joining with ExposureGraphNodes criticality"
+-->
+
+```kql
+// MDE-confirmed internet-facing devices (authoritative source)
+DeviceInfo
+| where Timestamp > ago(7d)
+| where IsInternetFacing == true
+| summarize arg_max(Timestamp, *) by DeviceId
+| extend InternetFacingReason = extractjson("$.InternetFacingReason", AdditionalFields, typeof(string)),
+    InternetFacingLocalPort = extractjson("$.InternetFacingLocalPort", AdditionalFields, typeof(int)),
+    InternetFacingScannedPublicPort = extractjson("$.InternetFacingPublicScannedPort", AdditionalFields, typeof(int)),
+    InternetFacingScannedPublicIp = extractjson("$.InternetFacingPublicScannedIp", AdditionalFields, typeof(string)),
+    InternetFacingLocalIp = extractjson("$.InternetFacingLocalIp", AdditionalFields, typeof(string)),
+    InternetFacingTransportProtocol = extractjson("$.InternetFacingTransportProtocol", AdditionalFields, typeof(string)),
+    InternetFacingLastSeen = extractjson("$.InternetFacingLastSeen", AdditionalFields, typeof(datetime))
+| project DeviceName, InternetFacingReason, InternetFacingLocalIp, InternetFacingLocalPort,
+    InternetFacingScannedPublicIp, InternetFacingScannedPublicPort,
+    InternetFacingTransportProtocol, InternetFacingLastSeen
+| order by InternetFacingLastSeen desc
+```
+
+**Key fields:**
+- `IsInternetFacing`: Boolean on DeviceInfo — set by MDE when device is confirmed reachable from the internet
+- `InternetFacingReason`: `PublicScan` (Microsoft's external scanner detected the device) or `InboundConnection` (device received external incoming communication)
+- `InternetFacingLocalPort` / `InternetFacingScannedPublicPort`: The port confirmed open
+- `InternetFacingScannedPublicIp`: The public IP that was scanned/connected to
+- `InternetFacingLastSeen`: Last time the device was confirmed internet-facing (tag removed after 48h of no events)
+
+**Comparison with ExposureGraph flags:**
+
+| Property | Source | Meaning | Reliability |
+|----------|--------|---------|-------------|
+| `DeviceInfo.IsInternetFacing` | MDE | Confirmed via external scan or inbound connection | **Authoritative** — auto-expires after 48h |
+| `ExposureGraphNodes.rawData.isCustomerFacing` | Exposure Management | Device serves a business function | **Not internet exposure** — business flag only |
+| `ExposureGraphNodes.rawData.publicIP` | Exposure Management | Device has a public IP assigned | **Inconclusive** — NSG may block all inbound |
+| `ExposureGraphNodes.rawData.IsInternetFacing` | Exposure Management | Legacy internet-facing flag | **Unreliable** — not populated in many environments |
+| `ExposureGraphNodes.rawData.exposedToInternet` | Exposure Management | Current internet-facing flag | **Unreliable** — not populated in many environments |
+
+---
+
+## Query 2: Customer-Facing Devices (Exposure Graph)
+
+Devices flagged as customer-facing by Exposure Management, with exposure scores and public IPs. Note: `isCustomerFacing` is a **business-function flag** indicating the device serves a customer/business role — it does NOT confirm actual internet reachability. Use Query 1 (`DeviceInfo.IsInternetFacing`) for authoritative internet-facing classification.
 
 <!-- cd-metadata
 cd_ready: false
@@ -68,13 +133,13 @@ ExposureGraphNodes
 ```
 
 **Key fields:**
-- `isCustomerFacing`: Boolean — Exposure Management's determination of internet reachability
+- `isCustomerFacing`: Boolean — business-function flag, NOT internet exposure. Devices serving authentication, file sharing, or customer-facing apps get flagged regardless of actual internet reachability
 - `exposureScore`: None / Low / Medium / High — composite vulnerability + configuration score
-- `publicIP`: The public IP assigned to the device (may be empty for NAT'd devices)
+- `publicIP`: The public IP assigned to the device — does NOT confirm reachability (NSG/firewall may block all inbound)
 
 ---
 
-## Query 2: Internet-Exposed Firewall Rules (Exposure Graph)
+## Query 3: Internet-Exposed Firewall Rules (Exposure Graph)
 
 Extracts all firewall/NSG rules that allow traffic from `0.0.0.0/0` (the entire internet) to specific resources, with port and protocol details.
 
@@ -141,7 +206,7 @@ ExposureGraphEdges
 
 ---
 
-## Query 3: Inbound Connections Accepted — Device Ranking
+## Query 4: Inbound Connections Accepted — Device Ranking
 
 Confirms exposure by showing which devices are actually receiving inbound connections from public IPs, ranked by volume and source IP diversity.
 
@@ -177,13 +242,13 @@ DeviceNetworkEvents
 
 ---
 
-## Query 4: Inbound Connections by Port
+## Query 5: Inbound Connections by Port
 
 Shows which ports are receiving the most inbound traffic from the internet — identifies the highest-risk services.
 
 <!-- cd-metadata
 cd_ready: false
-adaptation_notes: "Statistical summary grouped by port — useful for posture reporting but not row-level alerting. Use Query 3 or 11 for CD-ready variants"
+adaptation_notes: "Statistical summary grouped by port — useful for posture reporting but not row-level alerting. Use Query 4 or 12 for CD-ready variants"
 -->
 
 ```kql
@@ -219,7 +284,7 @@ DeviceNetworkEvents
 
 ---
 
-## Query 5: Top Inbound Attackers by Source IP
+## Query 6: Top Inbound Attackers by Source IP
 
 Identifies the most active source IPs sending inbound connections — useful for enrichment and threat intel correlation.
 
@@ -257,7 +322,7 @@ DeviceNetworkEvents
 
 ---
 
-## Query 6: RDP Brute-Force Analysis
+## Query 7: RDP Brute-Force Analysis
 
 Deep-dive into RDP (3389) exposure — hourly attack cadence, top attackers, and target device distribution.
 
@@ -304,7 +369,7 @@ DeviceNetworkEvents
 
 ---
 
-## Query 7: Connection Failures — Scanning/Probing Detection
+## Query 8: Connection Failures — Scanning/Probing Detection
 
 Detects failed inbound connections — indicates port scanning or probing against closed/filtered ports.
 
@@ -347,7 +412,7 @@ DeviceNetworkEvents
 
 ---
 
-## Query 8: Listening Ports — Service Discovery
+## Query 9: Listening Ports — Service Discovery
 
 Shows what ports each device has opened for listening in the last 7 days. Focus on well-known ports (< 10000) to identify actual services vs ephemeral.
 
@@ -399,7 +464,7 @@ DeviceNetworkEvents
 
 ---
 
-## Query 9: DeviceNetworkInfo — Devices on Public Networks
+## Query 10: DeviceNetworkInfo — Devices on Public Networks
 
 Lists MDE-enrolled devices that report being connected to the internet, with their public IP assignments and network category.
 
@@ -426,7 +491,7 @@ DeviceNetworkInfo
 
 ---
 
-## Query 10: Exposure Validation — Cross-Reference Graph Rules with Observed Traffic
+## Query 11: Exposure Validation — Cross-Reference Graph Rules with Observed Traffic
 
 Joins ExposureGraph firewall rules (what's allowed) with DeviceNetworkEvents (what's observed) to find gaps — rules that allow traffic but no observed connections (unused exposure), or connections on ports not in the rule set (unexpected exposure).
 
@@ -466,13 +531,13 @@ ExposedDevices
 ```
 
 **Interpretation:**
-- `HasObservedTraffic = true` + high InboundCount → **Confirmed exposure, actively targeted**
-- `HasObservedTraffic = false` + customer-facing → **Theoretically exposed but not yet targeted** (or MDE agent not reporting)
-- Not in ExposureGraph but receiving inbound → **Shadow exposure** (missing from topology model)
+- `HasObservedTraffic = true` + high InboundCount → **Confirmed exposure, actively targeted** (corroborate with Query 1 `DeviceInfo.IsInternetFacing`)
+- `HasObservedTraffic = false` + customer-facing → **Theoretical exposure only** — `isCustomerFacing` is a business-function flag, not confirmed internet reachability. Verify via Query 1
+- Not in ExposureGraph but receiving inbound → **Shadow exposure** (missing from topology model — check Query 1 for authoritative status)
 
 ---
 
-## Query 11: Specific Port Exposure Hunt
+## Query 12: Specific Port Exposure Hunt
 
 Template query for hunting inbound connections on a specific port — replace `<TARGET_PORT>` with the port of interest (e.g., 18789 for OpenClaw gateway).
 
@@ -517,7 +582,7 @@ DeviceNetworkEvents
 
 ---
 
-## Query 12: ExposureGraph Node Type Inventory
+## Query 13: ExposureGraph Node Type Inventory
 
 Discovery query — enumerate all node types and counts in the ExposureGraph to understand your topology coverage.
 
@@ -542,7 +607,7 @@ ExposureGraphEdges
 
 ---
 
-## Query 13: IP Address Nodes — Public IP Inventory
+## Query 14: IP Address Nodes — Public IP Inventory
 
 Lists all public IP address nodes in the ExposureGraph with their associated categories and properties.
 
@@ -585,19 +650,20 @@ ExposureGraphEdges
 
 ### Full Internet Exposure Assessment
 
-1. **Run Query 1** — Identify all customer-facing devices
-2. **Run Query 2** — Check what firewall rules allow from `0.0.0.0/0`
-3. **Run Query 3+4** — Confirm which devices/ports are actually receiving inbound traffic
-4. **Run Query 10** — Cross-reference: exposed devices with vs without observed traffic
-5. **Run Query 7** — Check what scanning/probing is hitting closed ports
-6. **Run Query 8** — Inventory all listening ports across the fleet
-7. **Enrich top attacker IPs** using `enrich_ips.py` from Query 5 output
+1. **Run Query 1** — Get MDE-confirmed internet-facing devices (`DeviceInfo.IsInternetFacing`) — authoritative starting point
+2. **Run Query 2** — Identify customer-facing devices in ExposureGraph for additional topology context
+3. **Run Query 3** — Check what firewall rules allow from `0.0.0.0/0`
+4. **Run Query 4+5** — Confirm which devices/ports are actually receiving inbound traffic
+5. **Run Query 11** — Cross-reference: customer-facing devices with vs without observed traffic
+6. **Run Query 8** — Check what scanning/probing is hitting closed ports
+7. **Run Query 9** — Inventory all listening ports across the fleet
+8. **Enrich top attacker IPs** using `enrich_ips.py` from Query 6 output
 
 ### Specific Port Hunt (e.g., OpenClaw 18789)
 
-1. **Run Query 11** with `targetPort = 18789`
-2. **Run Query 2** (risky port variant) — check if NSG/firewall allows 18789
-3. **Enrich source IPs** from Query 11 output
+1. **Run Query 12** with `targetPort = 18789`
+2. **Run Query 3** (risky port variant) — check if NSG/firewall allows 18789
+3. **Enrich source IPs** from Query 12 output
 4. Cross-reference with process-level evidence (DeviceProcessEvents for the listening service)
 
 ### Key Telemetry Gaps
@@ -606,5 +672,11 @@ ExposureGraphEdges
 |-----|--------|------------|
 | ExposureGraph only covers resources with Azure/GCP/AWS connectors | On-prem or unmanaged devices won't appear in topology queries | Use DeviceNetworkEvents `InboundConnectionAccepted` to detect exposure empirically |
 | `ConnectionAttempt` may not always populate for inbound probes | Missing some scanning evidence | Use `ConnectionFailed` as primary probe detection |
-| DeviceNetworkInfo `IsConnectedToInternet` is self-reported by the OS | NAT'd devices behind corporate firewalls may report true | Cross-reference with ExposureGraph `isCustomerFacing` for accurate internet reachability |
+| DeviceNetworkInfo `IsConnectedToInternet` is self-reported by the OS | NAT'd devices behind corporate firewalls may report true | Cross-reference with `DeviceInfo.IsInternetFacing` (Query 1) for authoritative internet reachability — NOT `isCustomerFacing` which is a business-function flag |
+| `DeviceInfo.IsInternetFacing` auto-expires after 48h of no activity | Intermittently-exposed devices may lose the tag between scan cycles | Check `InternetFacingLastSeen` in `AdditionalFields` for last confirmation time. Use DeviceNetworkEvents (Query 4) as backup confirmation |
 | ExposureGraph has 30-day retention in Advanced Hunting | Can't look back further for historical topology changes | Snapshot key queries periodically for trend analysis |
+
+---
+
+**Last Updated:** 2026-04-11  
+**Author:** Security Investigation System

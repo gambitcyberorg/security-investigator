@@ -47,11 +47,11 @@ The Sentinel Exposure Graph MCP server provides four specialized tools that oper
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `sourceName` | Yes | Name of the source node (e.g., `alpine-srv1`, a username, a SPN name) |
+| `sourceName` | Yes | Name of the source node (e.g., `contoso-srv1`, a username, a SPN name) |
 
 **Example:**
 ```
-graph_find_blastradius(sourceName="alpine-srv1")
+graph_find_blastradius(sourceName="contoso-srv1")
 ```
 
 **Returns:** Array of walkable paths, each containing ordered steps:
@@ -85,7 +85,7 @@ Device → contains → entra-userCookie → can authenticate as → User → ha
 
 **Example:**
 ```
-graph_exposure_perimeter(targetName="main-dc.zava-corp.com")
+graph_exposure_perimeter(targetName="dc01.contoso.com")
 ```
 
 **Returns:** Array of perimeter nodes with:
@@ -117,7 +117,7 @@ ExposureGraphEdges
 
 **Example:**
 ```
-graph_find_walkable_paths(sourceName="alpine-srv1", targetName="mdcd4aistorage1")
+graph_find_walkable_paths(sourceName="contoso-srv1", targetName="contoso-storage1")
 ```
 
 **Returns:** Ordered nodes and edges with full permission detail:
@@ -145,7 +145,7 @@ graph_find_walkable_paths(sourceName="alpine-srv1", targetName="mdcd4aistorage1"
 **Example:**
 ```
 graph_find_connected_nodes(
-    sourceName="alpine-srv1",
+    sourceName="contoso-srv1",
     sourceNodeLabel="microsoft.compute/virtualmachines",
     targetNodeLabel="microsoft.storage/storageaccounts",
     maxHops=2
@@ -195,14 +195,14 @@ When investigating a specific asset (e.g., a device under attack, a compromised 
 ### 1. Critical Devices & Assets (Queries 1-4)
 - **Query 1**: All critical devices (criticality < 4)
 - **Query 2**: Critical devices exposed to internet
-- **Query 3**: Critical VMs vulnerable to RCE
+- **Query 3**: Critical VMs with high-risk vulnerabilities
 - **Query 4**: Internet-facing devices with privilege escalation vulns
 
 ### 2. Critical Users & Identities (Query 5)
 - **Query 5**: Users logged into multiple critical devices
 
 ### 3. Attack Path Analysis (Queries 6-8)
-- **Query 6**: Multi-hop attack paths (RCE device → User → Critical server)
+- **Query 6**: Multi-hop attack paths (Vuln device → User → Critical server)
 - **Query 7**: Hybrid cloud-to-on-premises attack paths
 - **Query 8**: IP-to-VM attack paths (up to 3 hops)
 
@@ -294,9 +294,12 @@ Common edge types (by volume):
 | `criticalityLevel` | dynamic | Nested object: `{criticalityLevel: int, ruleNames: [...]}` |
 | `exposureScore` | real | Device exposure score (0-100) |
 | `riskScore` | real | Device risk score (0-100) |
-| `publicIP` | string | Public IP if internet-facing |
-| `IsInternetFacing` | bool | Legacy internet-facing flag |
-| `exposedToInternet` | bool | Current internet-facing flag |
+| `publicIP` | string | Public IP assigned to device — does NOT confirm internet reachability (NSG/firewall may block all inbound) |
+| `IsInternetFacing` | bool | Legacy internet-facing flag — **unreliable**, not populated in many environments |
+| `exposedToInternet` | bool | Current internet-facing flag — **unreliable**, not populated in many environments |
+| `isCustomerFacing` | bool | Business-function flag — **NOT internet exposure**. Devices serving auth, file sharing, or customer roles get flagged regardless of reachability |
+
+> ⚠️ **PITFALL: Internet-facing detection**: `rawData.IsInternetFacing`, `rawData.exposedToInternet`, and `rawData.isCustomerFacing` are all **unreliable** for determining actual internet exposure. The authoritative source is **`DeviceInfo.IsInternetFacing`** — a boolean maintained by MDE via external scans and observed inbound connections, auto-expiring after 48h. See `queries/network/internet_exposure_analysis.md` Query 1 and [MS Docs](https://learn.microsoft.com/en-us/defender-endpoint/internet-facing-devices#use-advanced-hunting). Queries in this file that filter on `rawData.IsInternetFacing` may return 0 results in environments where the property is not populated — fall back to the `DeviceInfo` approach.
 
 > ⚠️ **PITFALL**: `vulnerableToRCE` and `hasVulnerabilities` do NOT reliably exist as top-level properties on most devices. Always use `highRiskVulnerabilityInsights` instead. The legacy `vulnerableToRCE` property exists only on a subset of nodes.
 
@@ -349,44 +352,15 @@ This maps to MITRE ATT&CK:
 
 ### Find Your Most Critical Assets
 
-```kql
-ExposureGraphNodes
-| where set_has_element(Categories, "device")
-| where isnotnull(NodeProperties.rawData.criticalityLevel)
-| where NodeProperties.rawData.criticalityLevel.criticalityLevel < 4
-| extend CriticalityLevel = tostring(NodeProperties.rawData.criticalityLevel.criticalityLevel)
-| project 
-    DeviceName = NodeName,
-    CriticalityLevel,
-    Categories,
-    NodeLabel
-| order by CriticalityLevel asc
-```
-
-**Sample Results:**
-```
-DeviceName                                  CriticalityLevel  Categories                           NodeLabel
-ashtravel-dc.ashtravel.alpineskihouse.co   0                 [compute, device, virtual_machine]   microsoft.compute/virtualmachines
-mb-dc1.internal.niseko.alpineskihouse.co   0                 [compute, device, virtual_machine]   microsoft.compute/virtualmachines
-main-dc.zava-corp.com                      1                 [compute, device, virtual_machine]   microsoft.compute/virtualmachines
-```
+See **Query 1** in the Complete Query Library below.
 
 ---
 
 ### Find Internet-Exposed Critical Assets
 
-```kql
-ExposureGraphNodes
-| where set_has_element(Categories, "device")
-| where isnotnull(NodeProperties.rawData.criticalityLevel)
-| where NodeProperties.rawData.criticalityLevel.criticalityLevel < 4
-| where isnotnull(NodeProperties.rawData.IsInternetFacing)
-| project 
-    DeviceName = NodeName,
-    CriticalityLevel = NodeProperties.rawData.criticalityLevel.criticalityLevel,
-    InternetFacing = "Yes"
-| order by CriticalityLevel asc
-```
+> ⚠️ **The ExposureGraph `rawData.IsInternetFacing` property is unreliable** — not populated in many environments. For authoritative internet-facing classification, use `DeviceInfo.IsInternetFacing` from MDE (see `queries/network/internet_exposure_analysis.md` Query 1). Query 2 below uses the ExposureGraph property as a topology filter — expect 0 results in environments where it’s not populated.
+
+See **Query 2** in the Complete Query Library below.
 
 ---
 
@@ -479,7 +453,7 @@ ExposureGraphEdges
 4. **Query 12** - Rank by vulnerability count
 
 ### Attack Path Investigation
-1. **Query 6** - Multi-hop attack paths (RCE → User → Critical Server)
+1. **Query 6** - Multi-hop attack paths (Vuln device → User → Critical Server)
 2. **Query 7** - Hybrid cloud/on-prem paths
 3. **Query 8** - External IP exposure paths
 4. **Query 22** - Cookie chain: VulnDevice → Cookie → User → Azure Resource
@@ -610,8 +584,11 @@ ExposureGraphNodes
 ```
 
 ### Step 2: Check Internet Exposure
+
+> ⚠️ **Recommended:** Use `DeviceInfo.IsInternetFacing` for authoritative internet-facing classification (see `queries/network/internet_exposure_analysis.md` Query 1). The ExposureGraph `rawData.IsInternetFacing` property below is **unreliable** — not populated in many environments.
+
 ```kql
-// Query 2 - Filter for internet-facing
+// ExposureGraph topology filter (may return 0 if property not populated — use DeviceInfo instead)
 ExposureGraphNodes
 | where set_has_element(Categories, "device")
 | where isnotnull(NodeProperties.rawData.criticalityLevel)
@@ -662,9 +639,6 @@ See **Query 6** below in the complete query library for multi-hop attack path de
 
 ---
 
-**Last Updated**: 2026-02-12  
-**Query File**: ExposureGraph_CriticalAssets_AttackPaths.kql  
-**Author**: Security Investigation System
 ## 📚 Complete Query Library
 
 ### SECTION 1: Critical Devices & Assets
@@ -699,6 +673,8 @@ ExposureGraphNodes
 **Description**: Find critical devices that are internet-facing (high risk)  
 **Use Case**: Priority remediation - critical assets with external exposure
 
+> ⚠️ **`rawData.IsInternetFacing` is unreliable** — not populated in many environments. This query may return 0 results. For authoritative internet-facing classification, use `DeviceInfo.IsInternetFacing` (see `queries/network/internet_exposure_analysis.md` Query 1).
+
 <!-- cd-metadata
 cd_ready: false
 adaptation_notes: "ExposureGraph snapshot data — point-in-time device posture query. Not event-driven; CD requires temporal detection."
@@ -721,10 +697,12 @@ ExposureGraphNodes
 | order by CriticalityLevel asc
 ```
 
-#### Query 3: Critical Virtual Machines Vulnerable to RCE
+#### Query 3: Critical Virtual Machines with High-Risk Vulnerabilities
 
-**Description**: Find critical VMs exposed to internet with Remote Code Execution vulnerabilities  
+**Description**: Find critical VMs with high-risk vulnerability insights (RCE, privilege escalation)  
 **Use Case**: Highest risk assets requiring immediate attention
+
+> ⚠️ **`rawData.exposedToInternet` is unreliable** — not populated in many environments. This query may return 0 results. For authoritative internet exposure, cross-reference with `DeviceInfo.IsInternetFacing`.
 
 <!-- cd-metadata
 cd_ready: false
@@ -733,24 +711,32 @@ adaptation_notes: "ExposureGraph snapshot data — point-in-time VM vulnerabilit
 ```kql
 ExposureGraphNodes
 | where set_has_element(Categories, "virtual_machine")
-| where isnotnull(NodeProperties.rawData.exposedToInternet)
-| where isnotnull(NodeProperties.rawData.vulnerableToRCE)
+| where isnotnull(NodeProperties.rawData.highRiskVulnerabilityInsights)
+| extend VulnInsights = NodeProperties.rawData.highRiskVulnerabilityInsights
+| extend HasHighOrCritical = tobool(VulnInsights.hasHighOrCritical),
+    MaxCvss = toreal(VulnInsights.maxCvssScore),
+    VulnToRCE = tobool(VulnInsights.vulnerableToRemoteCodeExecution),
+    VulnToPrivEsc = tobool(VulnInsights.vulnerableToPrivilegeEscalation)
 | extend OSType = tostring(NodeProperties.rawData.osType)
 | project 
     VMName = NodeName,
     VMId = NodeId,
     NodeLabel,
     OSType,
-    ExposedToInternet = "Yes",
-    VulnerableToRCE = "Yes",
+    MaxCvss,
+    HasHighOrCritical,
+    VulnToRCE,
+    VulnToPrivEsc,
     Categories
-| order by VMName asc
+| order by MaxCvss desc
 ```
 
 #### Query 4: Internet-Facing Devices Vulnerable to Privilege Escalation
 
 **Description**: Find internet-facing devices with privilege escalation vulnerabilities  
 **Use Case**: Identify devices vulnerable to privilege escalation attacks from external sources
+
+> ⚠️ **`rawData.IsInternetFacing` and `rawData.VulnerableToPrivilegeEscalation` are legacy properties** — not populated in many environments. This query may return 0 results. Prefer `highRiskVulnerabilityInsights.vulnerableToPrivilegeEscalation` (Query 21) and cross-reference with `DeviceInfo.IsInternetFacing`.
 
 <!-- cd-metadata
 cd_ready: false
@@ -819,9 +805,9 @@ ExposureGraphEdges
 
 ### SECTION 3: Attack Path Analysis
 
-#### Query 6: Attack Paths - Devices with RCE → Users → Critical Servers
+#### Query 6: Attack Paths - Devices with High-Risk Vulnerabilities → Users → Critical Servers
 
-**Description**: Find attack paths where RCE-vulnerable devices connect to users who can remotely login to critical servers  
+**Description**: Find attack paths where devices with high-risk vulnerabilities connect to users who can remotely login to critical servers  
 **Use Case**: Identify multi-hop attack chains from vulnerable endpoints to critical assets
 
 <!-- cd-metadata
@@ -831,14 +817,14 @@ adaptation_notes: "ExposureGraph snapshot data — point-in-time attack path gra
 ```kql
 let IdentitiesAndCriticalDevices = ExposureGraphNodes
 | where 
-    // Critical devices & devices with RCE vulnerabilities
+    // Critical devices & devices with high-risk vulnerabilities
     (set_has_element(Categories, "device") and 
         (
             // Critical devices
             (isnotnull(NodeProperties.rawData.criticalityLevel) and NodeProperties.rawData.criticalityLevel.criticalityLevel < 4)
             or 
-            // Devices with RCE vulnerability
-            isnotnull(NodeProperties.rawData.vulnerableToRCE)
+            // Devices with high-risk vulnerabilities
+            isnotnull(NodeProperties.rawData.highRiskVulnerabilityInsights)
         )
     )
     or 
@@ -847,22 +833,23 @@ let IdentitiesAndCriticalDevices = ExposureGraphNodes
 ExposureGraphEdges
 | where EdgeLabel in~ ("Can Authenticate As", "CanRemoteInteractiveLogonTo")
 | make-graph SourceNodeId --> TargetNodeId with IdentitiesAndCriticalDevices on NodeId
-| graph-match (DeviceWithRCE)-[CanConnectAs]->(Identity)-[CanRemoteLogin]->(CriticalDevice)
+| graph-match (DeviceWithVuln)-[CanConnectAs]->(Identity)-[CanRemoteLogin]->(CriticalDevice)
     where 
         CanConnectAs.EdgeLabel =~ "Can Authenticate As" and
         CanRemoteLogin.EdgeLabel =~ "CanRemoteInteractiveLogonTo" and
         set_has_element(Identity.Categories, "identity") and 
-        set_has_element(DeviceWithRCE.Categories, "device") and isnotnull(DeviceWithRCE.NodeProperties.rawData.vulnerableToRCE) and
+        set_has_element(DeviceWithVuln.Categories, "device") and isnotnull(DeviceWithVuln.NodeProperties.rawData.highRiskVulnerabilityInsights) and
         set_has_element(CriticalDevice.Categories, "device") and isnotnull(CriticalDevice.NodeProperties.rawData.criticalityLevel)
     project 
-        RCEDeviceName = DeviceWithRCE.NodeName,
-        RCEDeviceIds = DeviceWithRCE.EntityIds,
+        VulnDeviceName = DeviceWithVuln.NodeName,
+        VulnDeviceIds = DeviceWithVuln.EntityIds,
+        MaxCvss = toreal(DeviceWithVuln.NodeProperties.rawData.highRiskVulnerabilityInsights.maxCvssScore),
         IdentityName = Identity.NodeName,
         IdentityIds = Identity.EntityIds,
         CriticalDeviceName = CriticalDevice.NodeName,
         CriticalDeviceIds = CriticalDevice.EntityIds,
         CriticalityLevel = CriticalDevice.NodeProperties.rawData.criticalityLevel.criticalityLevel
-| order by CriticalityLevel asc
+| order by CriticalityLevel asc, MaxCvss desc
 ```
 
 #### Query 7: Hybrid Attack Paths - Cloud to On-Premises
@@ -1715,4 +1702,5 @@ The `graphComponent` field contains the full attack chain: source entity → int
 
 ---
 
-**Last Updated**: 2026-02-12
+**Last Updated:** 2026-04-11  
+**Author:** Security Investigation System

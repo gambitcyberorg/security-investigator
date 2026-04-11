@@ -800,38 +800,43 @@ AuditLogs
 
 ---
 
-### Query 11: Internet-Facing Critical Assets with Vulnerability Exposure
+### Query 11: Critical Assets with Verified Internet Exposure
 
-🛡️ **Attack surface** — ExposureGraph snapshot of critical assets, flagging internet exposure and RCE/PrivEsc vulnerabilities.
+🛡️ **Attack surface** — Combines ExposureGraph critical asset inventory with MDE's authoritative `DeviceInfo.IsInternetFacing` classification to identify verified internet-exposed critical assets.
 
 **Tool:** `RunAdvancedHuntingQuery`
 
 ```kql
-ExposureGraphNodes
-| where set_has_element(Categories, "device")
-| extend rawData = parse_json(tostring(parse_json(tostring(NodeProperties)).rawData))
-| extend critLevel = toint(rawData.criticalityLevel.criticalityLevel)
-| where isnotnull(critLevel) and critLevel < 4
-| extend IsInternetFacing = tobool(rawData.IsInternetFacing) or tobool(rawData.exposedToInternet)
-| extend VulnRCE = tobool(rawData.highRiskVulnerabilityInsights.vulnerableToRemoteCodeExecution)
-| extend VulnPrivEsc = tobool(rawData.highRiskVulnerabilityInsights.VulnerableToPrivilegeEscalation)
-| project 
-    DeviceName = NodeName,
-    CriticalityLevel = critLevel,
-    IsInternetFacing,
-    VulnRCE,
-    VulnPrivEsc,
-    NodeLabel
-| order by IsInternetFacing desc, CriticalityLevel asc
+let InternetFacing = DeviceInfo
+    | where Timestamp > ago(7d)
+    | where IsInternetFacing == true
+    | summarize arg_max(Timestamp, *) by DeviceId
+    | project DeviceName,
+        Reason = extractjson("$.InternetFacingReason", AdditionalFields, typeof(string)),
+        PublicIP = extractjson("$.InternetFacingPublicScannedIp", AdditionalFields, typeof(string)),
+        ExposedPort = extractjson("$.InternetFacingLocalPort", AdditionalFields, typeof(int));
+let CriticalAssets = ExposureGraphNodes
+    | where set_has_element(Categories, "device")
+    | where isnotnull(NodeProperties.rawData.criticalityLevel)
+    | extend critLevel = toint(NodeProperties.rawData.criticalityLevel.criticalityLevel)
+    | where critLevel < 4
+    | project DeviceName = NodeName, CriticalityLevel = critLevel,
+        ExposureScore = tostring(NodeProperties.rawData.exposureScore);
+CriticalAssets
+| join kind=leftouter InternetFacing on DeviceName
+| extend IsVerifiedExposed = isnotempty(PublicIP)
+| project DeviceName, CriticalityLevel, IsVerifiedExposed,
+    Reason, PublicIP, ExposedPort, ExposureScore
+| order by IsVerifiedExposed desc, CriticalityLevel asc
 | take 25
 ```
 
-**Purpose:** Returns the critical asset inventory (criticality 0–3) with internet-facing status and vulnerability flags. An internet-facing critical asset with RCE vulnerability is the highest-priority finding in this entire skill.
+**Purpose:** Returns the critical asset inventory (criticality 0–3) enriched with MDE's authoritative internet-facing classification. `DeviceInfo.IsInternetFacing` is confirmed via Microsoft external scans or observed inbound connections and auto-expires after 48h — far more reliable than ExposureGraph properties like `isCustomerFacing` (business flag) or `rawData.IsInternetFacing` (not populated in many environments). See [MS Docs](https://learn.microsoft.com/en-us/defender-endpoint/internet-facing-devices#use-advanced-hunting) and `queries/network/internet_exposure_analysis.md` Query 1 for the canonical reference.
 
 **Verdict logic:**
-- 🔴 Escalate: Any `IsInternetFacing == true` AND (`VulnRCE == true` or `VulnPrivEsc == true`)
-- 🟠 Investigate: Any `IsInternetFacing == true` (without known vulns)
-- 🟡 Monitor: Critical assets exist but none internet-facing
+- 🔴 Escalate: Any `IsVerifiedExposed == true` with `CriticalityLevel == 0` (internet-facing domain controller/CA)
+- 🟠 Investigate: Any `IsVerifiedExposed == true` (internet-facing critical asset)
+- 🟡 Monitor: Critical assets exist but none verified internet-facing
 - ✅ Clear: All critical assets properly segmented, no internet exposure
 
 ---
