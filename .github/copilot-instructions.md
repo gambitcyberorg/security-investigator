@@ -145,7 +145,7 @@ Before querying any table for the first time in a session, verify the schema:
 | **SecurityAlert** | `ProviderName` is an internal identifier (e.g., `MDATP`, `ASI Scheduled Alerts`, `MCAS`) and rolls up to generic names like `Microsoft XDR` at the incident level | Use **`ProductName`** for product grouping (e.g., `Azure Sentinel`, `Microsoft Defender Advanced Threat Protection`, `Microsoft Data Loss Prevention`). Also available: `ProductComponentName` (e.g., `Scheduled Alerts`, `NRT Alerts`). Translate raw values to current branding in reports. |
 | **SecurityIncident** | `AlertIds` contains **SystemAlertId GUIDs**, NOT usernames, IPs, or entity names | NEVER filter `AlertIds` by entity name. Instead: query `SecurityAlert` first filtering by `Entities has '<entity>'`, then join to `SecurityIncident` on AlertId |
 | **AuditLogs** | `InitiatedBy`, `TargetResources` are **dynamic fields** | Always wrap in `tostring()` before using `has` operator |
-| **AuditLogs** | `OperationName` values vary across providers. **Consent lifecycle trap:** `"Consent to application"` is only 1 of 4+ operations — `"Add delegated permission grant"`, `"Remove delegated permission grant"` use different names. Filtering `has "consent"` misses grant add/remove events | Use broad `has "keyword"` for discovery, but for consent investigations use `queries/identity/app_credential_management.md` Query 5 which has the complete operation list |
+| **AuditLogs** | `OperationName` values vary across providers — e.g., "Reset user password", "Change user password", "Self-service password reset" are all different values. **Consent lifecycle trap:** `"Consent to application"` is only 1 of 4+ operations. `has_any()` requires exact word matches and is unpredictable | Use broad `has "keyword"` for discovery (e.g., `has "password"`, `has "role"`), then refine with `summarize count() by OperationName`. For consent investigations use `queries/identity/app_credential_management.md` Query 5 which has the complete operation list |
 | **SigninLogs** / **AADNonInteractiveUserSignInLogs** | `DeviceDetail`, `LocationDetails`, `ConditionalAccessPolicies`, `Status` may be **dynamic OR string** depending on workspace (Data Lake workspaces store them as strings). `AADNonInteractiveUserSignInLogs` stores these as **string always** | Always use `tostring(parse_json(DeviceDetail).operatingSystem)` — works for both types. Direct dot-notation `DeviceDetail.operatingSystem` fails with SemanticError when column is string type. Same applies to `Status` (use `parse_json(Status).errorCode`), `ConditionalAccessPolicies` — use `parse_json()` before dot-access or `mv-expand` |
 | **SigninLogs** | `Location` is a **string** column, NOT dynamic. Dot-notation like `Location.countryOrRegion` will fail with SemanticError | Use `parse_json(LocationDetails).countryOrRegion` for geographic sub-properties. `Location` works with `dcount()`, `has`, `isnotempty()` but NOT dot-property access |
 | **AADUserRiskEvents** | May have different retention than SigninLogs. **IP column is `IpAddress`** (lowercase 'p'), NOT `IPAddress`. Using `IPAddress` returns `Failed to resolve scalar expression`. LLMs default to `IPAddress` (matching SigninLogs convention) and consistently get this wrong. **Timestamp column is `ActivityDateTime`**, NOT `TimeGenerated` — using `TimeGenerated` silently returns 0 results (column exists but is ingestion time, not event time). `Location` is a **JSON string** — use `parse_json(Location).countryOrRegion` | Cross-reference with `SigninLogs` `RiskLevelDuringSignIn` for complete picture. Always use `IpAddress` (lowercase 'p') and `ActivityDateTime` for time filtering |
@@ -153,10 +153,9 @@ Before querying any table for the first time in a session, verify the schema:
 | **OfficeActivity** | `Parameters` and `OperationProperties` are **string fields** containing JSON | Use `contains` or `has` for keyword matching, then `parse_json(Parameters)` to extract specific values. Do NOT query AuditLogs for mailbox rule changes — they only appear in OfficeActivity (Exchange workload). |
 | **Signinlogs_Anomalies_KQL_CL** | Custom `_CL` table names are **case-sensitive**. Table uses lowercase 'l' in "logs" — `Signinlogs` NOT `SigninLogs`. LLMs auto-correct this to match `SigninLogs` | Always copy exact table name `Signinlogs_Anomalies_KQL_CL`. If `SemanticError: Failed to resolve table`, verify casing first. If still fails, table may not exist in the workspace — skip gracefully |
 | **SentinelHealth** | `SentinelResourceType` values use **title-case with a space**: `"Analytics Rule"`, NOT `"Analytic rule"`. LLMs consistently generate the wrong casing/spelling, returning 0 results despite 30k+ rows in the table | Always use `SentinelResourceType == "Analytics Rule"` (capital A, capital R, "Analytics" with an 's'). Other valid values: `"Data connector"`, `"Automation rule"`. If query returns 0 rows, check this filter first |
-| **AADSignInEventsBeta / AADSpnSignInEventsBeta** | **Deprecated** (Dec 9, 2025). Microsoft replaced these preview tables with `EntraIdSignInEvents` and `EntraIdSpnSignInEvents` respectively to align with Entra branding. Both old tables may still resolve temporarily but will be fully removed. LLMs and older query files still reference `AADSignInEventsBeta` heavily. **Case-sensitivity pitfall:** The table name is `EntraIdSignInEvents` (capital `I` in `SignIn`). LLMs frequently generate `EntraIdSigninEvents` (lowercase `i`) which resolves as `SemanticError: Failed to resolve table`. The Graph API `FetchAdvancedHuntingTablesDetailedSchema` does NOT index this table yet — `getschema` inline is the only way to discover columns. **New columns vs AADSignInEventsBeta:** `RiskLevelDuringSignIn` (int), `RiskEventTypes` (string), `EntraIdDeviceId` (replaces `AadDeviceId`), `GatewayJA4` (JA4 fingerprint), `UniqueTokenId`, `IsSignInThroughGlobalSecureAccess` (bool) | Always use **`EntraIdSignInEvents`** (interactive + non-interactive sign-ins) and **`EntraIdSpnSignInEvents`** (service principal sign-ins). **Copy the exact casing** — `EntraIdSignInEvents` not `EntraIdSigninEvents`. Schema is NOT identical to predecessor — new columns added. Custom detections are auto-migrated by the platform but custom KQL in skills/queries files must be updated manually. [MS Learn reference](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-entraidsigninevents-table) |
-| **EntraIdSignInEvents** *(AH table preference rule)* | `EntraIdSignInEvents` covers **both interactive AND non-interactive** sign-ins in a single AH-native table — it should be the **default choice over** `SigninLogs` / `AADNonInteractiveUserSignInLogs` for Advanced Hunting queries (≤30d). Column mapping differences vs Sentinel tables: `ErrorCode` (int) vs `ResultType` (string), `AccountUpn` vs `UserPrincipalName`, `Application`/`ApplicationId` vs `AppDisplayName`/`AppId`, `Country`/`City` as direct strings (no `parse_json(LocationDetails)` needed), `RequestId` vs `OriginalRequestId`, `LogonType` (JSON array string `["nonInteractiveUser"]` or `["interactiveUser"]`) vs `IsInteractive` (bool). **`LogonType` pitfall:** Values are JSON array strings — use `LogonType has "nonInteractiveUser"`, NOT `LogonType == "nonInteractiveUser"`. `RiskLevelDuringSignIn` and `RiskState` are **int** (not string) — use `0`/`1`/`10`/`50`/`100` not `"none"`/`"low"`/`"medium"`/`"high"`. `ConditionalAccessStatus` is also **int** (`0`=applied, `1`=failed, `2`=not applied) | **AH queries (≤30d):** Default to `EntraIdSignInEvents` — simpler schema, no `parse_json()` for geo fields, single table covers both interactive and non-interactive. **Data Lake / >30d lookback:** Fall back to `SigninLogs` + `AADNonInteractiveUserSignInLogs` (union) — these Sentinel-native tables have 90+ day retention. When adapting between the two: map column names per the table above, convert `ErrorCode` int ↔ `ResultType` string, and use `has` for `LogonType` filtering |
+| **EntraIdSignInEvents** | **Case-sensitivity pitfall:** Capital `I` in `SignIn` — `EntraIdSigninEvents` (lowercase `i`) fails. `FetchAdvancedHuntingTablesDetailedSchema` does NOT index this table — use inline `getschema`. Covers **both interactive AND non-interactive** sign-ins — **default choice over** `SigninLogs` / `AADNonInteractiveUserSignInLogs` for AH queries (≤30d). SPN sign-ins use `EntraIdSpnSignInEvents`. **Column mapping vs Sentinel tables:** `ErrorCode` (int) vs `ResultType` (string), `AccountUpn` vs `UserPrincipalName`, `Application`/`ApplicationId` vs `AppDisplayName`/`AppId`, `Country`/`City` as direct strings (no `parse_json(LocationDetails)`), `RequestId` vs `OriginalRequestId`. **`LogonType` pitfall:** JSON array string (`["nonInteractiveUser"]`) — use `has` not `==`. `RiskLevelDuringSignIn`/`RiskState` are **int** (use `0`/`1`/`10`/`50`/`100`). `ConditionalAccessStatus` is **int** (`0`=applied, `1`=failed, `2`=not applied) | **AH queries (≤30d):** Default to `EntraIdSignInEvents`. **Data Lake / >30d:** Fall back to `SigninLogs` + `AADNonInteractiveUserSignInLogs` (union, 90+ day retention). Map column names when adapting between the two. [MS Learn reference](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-entraidsigninevents-table) |
 | **AADRiskySignIns** | Table does **NOT exist** in Sentinel Data Lake. Querying it returns `SemanticError: Failed to resolve table` | Use `AADUserRiskEvents` instead (contains Identity Protection risk detections). For sign-in-level risk data, use `SigninLogs` with `RiskLevelDuringSignIn` and `RiskState` columns |
-| **SecurityIncident / SecurityAlert** | `IncidentNumber` and `SystemAlertId` are **Sentinel-local IDs** — the Triage MCP (`GetIncidentById`, `GetAlertById`) uses **Defender XDR IDs** and returns "not found" for Sentinel IDs | Use `SecurityIncident.ProviderIncidentId` for Triage MCP incident lookups. For alert drill-down, extract `parse_json(ExtendedProperties).IncidentId` from SecurityAlert. See [Sentinel ↔ Defender XDR ID Mapping](#-sentinel--defender-xdr-id-mapping--global-rule) for full mapping table |
+| **SecurityIncident / SecurityAlert** | `IncidentNumber` and `SystemAlertId` are **Sentinel-local IDs** — Triage MCP uses **Defender XDR IDs** | Use `ProviderIncidentId` for Triage MCP lookups. See [Sentinel ↔ Defender XDR ID Mapping](#-sentinel--defender-xdr-id-mapping--global-rule) for full mapping |
 | **AIAgentsInfo** | **Advanced Hunting only** — does NOT exist in Sentinel Data Lake. Multiple records per agent (state snapshots); `KnowledgeDetails` is a string containing a JSON array of JSON strings; `IsGenerativeOrchestrationEnabled` may be null | Always use `RunAdvancedHuntingQuery`. Deduplicate with `summarize arg_max(Timestamp, *) by AIAgentId`. Double-parse KnowledgeDetails: `mv-expand KnowledgeRaw = parse_json(KnowledgeDetails) \| extend KnowledgeJson = parse_json(tostring(KnowledgeRaw))`. Treat null GenAI flag as unknown. Table is in **Preview** — schema may change |
 | **DataSecurityEvents** | **Advanced Hunting only** — requires Insider Risk Management opt-in. `SensitiveInfoTypeInfo` is `Collection(String)` NOT native dynamic — requires double `parse_json()`. Contains SIT **GUIDs** not names. Copilot events ("Risky prompt entered in Copilot", "Sensitive response received in Copilot") can dominate 90%+ of volume. `ObjectId` is the file identifier — `ObjectName`/`ObjectType` do NOT exist despite documentation. **Label columns:** `SensitivityLabelId` (string, can be comma-separated), `PreviousSensitivityLabelId` (string, label change events), `SharepointSiteSensitivityLabelId` (string), `RiskyAIUsageSensitivityLabelsInfo` (Collection(String), mostly `[null]`). Label data is sparse in SIT-dominant environments but significant in Purview-mature orgs | Always use `RunAdvancedHuntingQuery`. Double-parse: `mv-expand SIT = parse_json(tostring(SensitiveInfoTypeInfo)) \| extend SITJson = parse_json(tostring(SIT))`. Pre-filter with `where SensitiveInfoTypeInfo has "<GUID>"` before `mv-expand`. Use `split(SensitivityLabelId, ",")` for multi-GUID label values. Use `data-security-analysis` skill for SIT and label GUID-to-name resolution. If table returns 0 rows, check IRM opt-in status |
 | **DeviceTvmSoftwareVulnerabilities / DeviceTvmSoftwareInventory / DeviceTvmSecureConfigurationAssessment / SecurityRecommendation** | **Advanced Hunting only** — Defender TVM tables do NOT exist in Sentinel Data Lake. **DeviceName is stored as FQDN** (e.g., `myserver.contoso.com`), NOT short hostname. Using `DeviceName =~ 'hostname'` returns 0 results | Always use `RunAdvancedHuntingQuery`. Uses `Timestamp` not `TimeGenerated`. **Per-device filter:** Use `DeviceName startswith '<hostname>'` (matches both short and FQDN). NEVER use `=~` with short names. For vulnerability investigations, use the `exposure-investigation` skill |
@@ -165,12 +164,9 @@ Before querying any table for the first time in a session, verify the schema:
 | **AzureDiagnostics** | **Legacy table** — Microsoft [explicitly documents](https://learn.microsoft.com/azure/sentinel/datalake/kql-queries#query-considerations-and-limitations) that "Querying legacy tables such as AzureDiagnostics is not supported" in Data Lake. `mcp_sentinel-data_query_lake` returns `SemanticError: Failed to resolve table` even though the table exists in the workspace. Lake-only ingestion is also not supported (`No` in [connector reference](https://learn.microsoft.com/azure/sentinel/sentinel-tables-connectors-reference)). The portal may show the workspace as "Data Lake integrated" but individual tables have eligibility flags — this table is stuck on Analytics tier. This is NOT the same table as `AzureActivity`. **AzureDiagnostics** = resource-specific diagnostic logs (Key Vault data plane: `SecretGet`, `Authentication`, `VaultGet`; SQL auditing; Firewall logs; App Service logs, etc.). **AzureActivity** = ARM control plane operations (resource creation/deletion, policy actions, role assignments, deployments). Confusing the two leads to querying the wrong table and missing critical data plane evidence | If Data Lake returns "Failed to resolve table", **immediately** try `RunAdvancedHuntingQuery` (AH can query Analytics-tier tables). Do NOT fall back to `AzureActivity` — it contains completely different data. Key columns: `ResourceType` (e.g., `VAULTS`), `OperationName` (e.g., `SecretGet`), `CallerIPAddress`, `ResultType`, `Resource` (resource name), `Category` (e.g., `AuditEvent`). Filter pattern: `AzureDiagnostics \| where ResourceType == "VAULTS" \| where Resource =~ "<vault-name>"`. For Key Vault investigations, look for `OperationName` values like `SecretGet`, `SecretList`, `Authentication`, `VaultGet` |
 | **IdentityAccountInfo** | **Advanced Hunting only** — does NOT exist in Sentinel Data Lake. Table is in **Preview** — schema may change and many fields are not yet populated (`EnrolledMfas`, `TenantMembershipType`, `AuthenticationMethod`, `CriticalityLevel`, `DefenderRiskLevel`). Multiple snapshot records per account; `AssignedRoles` and `GroupMembership` are dynamic arrays. `SourceProviderRiskLevel` values vary by provider (AAD=High/Medium/Low, Okta=HIGH/MEDIUM, SailPoint=HIGH). `AccountStatus` vocabularies differ across providers (AAD: Enabled/Disabled/Deleted; SailPoint: ACTIVE/NONE/INACTIVE; Okta: STAGED/ACTIVE/DEPROVISIONED; CyberArk: ACTIVE/INVITED/SUSPENDED). **IdentityInfo UAC join pitfall:** `array_index_of(null_dynamic, "value")` returns `null` (not `-1`). Since `null != -1` is `true` in KQL, querying `array_index_of(UserAccountControl, "PasswordNeverExpires") != -1` without first filtering `isnotnull(UserAccountControl)` incorrectly returns true for ALL null-UAC accounts (~99% of identities), massively inflating PwdNeverExpires counts | Always use `RunAdvancedHuntingQuery`. Deduplicate with `summarize arg_max(Timestamp, *) by AccountId` (per-account) or `by IdentityId` (cross-provider). Parse roles/groups: `mv-expand Role = parse_json(AssignedRoles)`. `IdentityId` links accounts across providers — one identity can have accounts from multiple sources. For enrichment, join with `IdentityInfo` on `IdentityId` (not `AccountUpn` — avoids 1:many inflation). **When using UserAccountControl from IdentityInfo:** MUST add `where isnotnull(UserAccountControl)` BEFORE computing boolean flags with `array_index_of`. Use `identity-posture` skill for comprehensive identity posture reports |
 | **BehaviorEntities / BehaviorInfo** | **Advanced Hunting only** — does NOT exist in Sentinel Data Lake. Table is in **Preview**. Two companion tables: `BehaviorInfo` (1 row per behavior — description, MITRE techniques, time window) and `BehaviorEntities` (N rows per behavior — entity decomposition). Populated by **MCAS** and **Sentinel UEBA** only — if these services aren't deployed, queries return 0 rows. `Categories` and `AttackTechniques` are **JSON strings**, not arrays — must `parse_json()` before `mv-expand`. K8s entity `AdditionalFields` contains deeply nested JSON with `$id`/`$ref` circular references. Low volume table (behavioral detections, not raw events). Significant overlap with SecurityAlert (same MCAS/MDC sources) but provides **below-alert-threshold signals** and **pre-decomposed entity rows** without parsing the SecurityAlert `Entities` JSON blob | Always use `RunAdvancedHuntingQuery`. Join tables on `BehaviorId`. Key ActionTypes: `ImpossibleTravelActivity`, `MultipleFailedLoginAttempts`, `MassDownload`, `UnusualAdditionOfCredentialsToAnOauthApp`, `K8S.NODE_DriftBlocked`, `K8S.NODE_MalwareBlocked`. Entity rows have `EntityRole` = `Impacted` or `Related`. Use for enriching user/IP investigations with MCAS/UEBA context. See `queries/cloud/behavior_entities.md` for verified query patterns |
-| **DeviceCustomFileEvents** | **Advanced Hunting only** — requires MDE Custom Data Collection (CDC) rules to be enabled. This table does NOT exist in workspaces without CDC policies. Contains file activity that **standard `DeviceFileEvents` misses** — particularly Node.js file I/O, runtime-managed config/session files, and other low-level file operations below MDE's default telemetry threshold. If `DeviceFileEvents` returns 0 results for a directory you know has active file activity (e.g., `%AppData%` app config directories, runtime session stores), CDC tables may fill the gap. Uses `Timestamp` (not `TimeGenerated`). `ActionType` values match standard table (`FileCreated`, `FileModified`, etc.) but coverage depends entirely on which CDC policy rules are deployed | Always use `RunAdvancedHuntingQuery`. **CDC tables are optional** — if query returns "Failed to resolve table", the workspace does not have CDC enabled; skip gracefully and note the telemetry gap. When standard `DeviceFileEvents` returns 0 for expected file activity, try: `DeviceCustomFileEvents \| where DeviceName =~ "<device>" \| where FolderPath has "<target-path>" \| summarize count() by ActionType, FolderPath`. CDC can reveal directory trees, config file mutation patterns (SHA256 changes over time), and session/temp file lifecycle that standard MDE telemetry omits entirely |
-| **DeviceCustomScriptEvents** | **Advanced Hunting only** — requires MDE CDC rules. Contains AMSI-captured script content (PowerShell, VBScript, JScript). **CRITICAL SCHEMA NOTE: The script body column is `ScriptContent`, NOT `AdditionalFields`.** Querying `AdditionalFields` returns `SemanticError`. AMSI only sees script engines that integrate with the Windows AMSI interface — **Node.js V8, Go, Rust, and other non-AMSI runtimes are invisible**. A search for keywords across all AMSI rows returning 0 does NOT mean the activity didn't happen; it means the runtime bypasses AMSI entirely. PowerShell bootstrap scripts for Node.js/Python apps WILL appear, but the app's own runtime logic will not | Always use `RunAdvancedHuntingQuery`. Query pattern: `DeviceCustomScriptEvents \| where DeviceName =~ "<device>" \| where ScriptContent has "<keyword>" \| project Timestamp, DeviceName, ScriptContent, InitiatingProcessFileName`. **Do NOT use `AdditionalFields`** — it does not exist on this table. When investigating Node.js/Go/Rust applications: AMSI will capture any PowerShell launcher scripts but NOT the application's own code execution. Document this as a known telemetry blind spot, not as evidence of absence |
-| **DeviceCustomImageLoadEvents** | **Advanced Hunting only** — requires MDE CDC rules. Contains DLL/module load events that standard `DeviceImageLoadEvents` may not capture at the same granularity. Useful for identifying **native addons** loaded by script runtimes (e.g., `.node` native modules loaded by Node.js, Python C extensions). Standard `DeviceImageLoadEvents` covers most loads, but CDC can capture additional context depending on policy configuration | Always use `RunAdvancedHuntingQuery`. Useful query: `DeviceCustomImageLoadEvents \| where DeviceName =~ "<device>" \| where InitiatingProcessFileName == "node.exe" \| summarize count() by FileName, FolderPath`. For npm packages with native addons, this reveals which compiled modules are actually loaded at runtime — the only visibility into the dependency tree when `node_modules` file events are unavailable |
-| **DeviceCustomNetworkEvents** | **Advanced Hunting only** — requires MDE CDC rules. Coverage depends entirely on which CDC network policy rules are deployed — some environments only collect Kerberos authentication events, others collect broader network telemetry. **Do not assume this table contains general network connections** — check the CDC policy scope first. Standard `DeviceNetworkEvents` is usually sufficient for TCP/UDP connection telemetry | Always use `RunAdvancedHuntingQuery`. Before relying on this table, run a discovery query: `DeviceCustomNetworkEvents \| summarize count() by ActionType \| take 20` to understand what event types are actually being collected. If only Kerberos events appear, standard `DeviceNetworkEvents` is the correct source for connection-level analysis |
+| **DeviceCustom\* (CDC Tables)** | **Advanced Hunting only** — requires MDE Custom Data Collection (CDC) rules. These tables (`DeviceCustomFileEvents`, `DeviceCustomScriptEvents`, `DeviceCustomImageLoadEvents`, `DeviceCustomNetworkEvents`) do NOT exist in workspaces without CDC policies. They extend standard MDE telemetry beyond default thresholds. **Key per-table pitfalls:** `DeviceCustomScriptEvents` — script body is `ScriptContent`, NOT `AdditionalFields` (SemanticError); AMSI-only (Node.js/Go/Rust invisible). `DeviceCustomNetworkEvents` — coverage varies by CDC policy; some environments only collect Kerberos events, run discovery query first. `DeviceCustomFileEvents` — fills gaps when standard `DeviceFileEvents` returns 0 for known active directories. `DeviceCustomImageLoadEvents` — reveals native addons (`.node` modules, Python C extensions) | Always use `RunAdvancedHuntingQuery`. **CDC tables are optional** — if "Failed to resolve table", skip gracefully and note the telemetry gap. Query order: standard table first → if 0 results and activity is expected → try CDC equivalent → if CDC table doesn't exist → note as telemetry limitation |
 
-> **💡 CDC Telemetry Escalation Pattern:** When standard MDE tables (`DeviceFileEvents`, `DeviceProcessEvents`, `DeviceImageLoadEvents`) return 0 results for activity you have evidence exists (e.g., process tree shows a running application but no file events for its config directory), check whether `DeviceCustom*` tables exist in Advanced Hunting. CDC (Custom Data Collection) rules extend MDE telemetry beyond default thresholds. Not all environments have CDC enabled — if the tables don't resolve, document the telemetry gap rather than assuming absence of activity. Query order: standard table first → if 0 results and activity is expected → try CDC equivalent → if CDC table doesn't exist → note as telemetry limitation.
+> **💡 CDC Telemetry Escalation Pattern:** When standard MDE tables return 0 results for activity you have evidence exists, check whether `DeviceCustom*` tables are available. Not all environments have CDC enabled — if the tables don't resolve, document the telemetry gap rather than assuming absence of activity.
 
 ### Step 3b: Common KQL Anti-Patterns (All Tables)
 
@@ -210,13 +206,10 @@ These universal KQL mistakes are frequent LLM errors regardless of which table i
 | Action | Status |
 |--------|--------|
 | Writing KQL from scratch without completing Steps 1-2 | ❌ **PROHIBITED** |
-| Querying a table for the first time without checking schema | ❌ **PROHIBITED** |
 | Filtering `SecurityIncident.AlertIds` by entity names | ❌ **PROHIBITED** |
 | Reading `SecurityAlert.Status` as current investigation status | ❌ **PROHIBITED** |
 | Reporting 0 results without sanity-checking the query logic | ❌ **PROHIBITED** |
-| Assuming field content types without schema verification | ❌ **PROHIBITED** |
-| Using `AADSignInEventsBeta` or `AADSpnSignInEventsBeta` in any query | ❌ **PROHIBITED** — deprecated Dec 2025, use `EntraIdSignInEvents` / `EntraIdSpnSignInEvents` |
-| Using `Timestamp` on Sentinel/LA tables in Data Lake queries | ❌ **PROHIBITED** — use `TimeGenerated` (Timestamp is XDR-native tables only in AH) |
+| Using `Timestamp` on Sentinel/LA tables in Data Lake queries | ❌ **PROHIBITED** — use `TimeGenerated` |
 
 ---
 
@@ -322,26 +315,6 @@ After every investigation section, confirm what was checked even if nothing was 
 - Checked: SecurityIncident for associated entities (0 matches)
 ```
 
-### KQL Query Research - Use Published Queries First
-
-> **📋 Full pre-flight checklist:** See [KQL QUERY EXECUTION - PRE-FLIGHT CHECKLIST](#-kql-query-execution---pre-flight-checklist) above. This subsection summarizes the query research requirement.
-
-Before writing any KQL query from scratch, **search for existing human-verified queries** in these sources (in priority order):
-
-1. **Skills directory (`.github/skills/`):** Search existing SKILL.md files for reference queries using the table or pattern you need. These are battle-tested queries with known pitfalls documented (e.g., `SecurityAlert.Status` immutability, dynamic field parsing). Use `grep_search` with the table name or keyword scoped to `.github/skills/**`.
-2. **Queries library (`queries/`):** Search standalone query collections for the table name, keyword, or MITRE technique. These files follow a standardized metadata header format with `Tables:`, `Keywords:`, and `MITRE:` fields for efficient keyword search. Use `grep_search` scoped to `queries/**`.
-3. **This file's [Appendix](#appendix-ad-hoc-query-examples):** Check for canonical query patterns (SecurityAlert→SecurityIncident join, AuditLogs, etc.) before writing from scratch.
-4. **KQL Search MCP:** Use `search_github_examples_fallback` or `validate_kql_query` to find community-published query examples from repositories like Azure-Sentinel and Microsoft-365-Defender-Hunting-Queries. Use `get_table_schema` to verify column names before querying.
-5. **Microsoft Learn MCP:** Use `microsoft_code_sample_search` with `language: "kusto"` to find official Microsoft KQL examples.
-
-**Why this matters:** Published queries encode institutional knowledge about schema quirks, immutable fields, required joins, and edge cases that are easy to get wrong when writing queries from scratch. Always prefer adapting a verified query over inventing one.
-
-| Action | Status |
-|--------|--------|
-| Writing KQL without completing the [Pre-Flight Checklist](#-kql-query-execution---pre-flight-checklist) | ❌ **PROHIBITED** |
-| Assuming field behavior without verifying in skill docs | ❌ **PROHIBITED** |
-| Using a table for the first time without checking schema | ❌ **PROHIBITED** |
-
 ### Technical Context Enrichment
 
 When explaining technical concepts, use **Microsoft Learn MCP** to ground responses in official documentation:
@@ -366,31 +339,31 @@ When explaining technical concepts, use **Microsoft Learn MCP** to ground respon
 
 | Category | Skill | Description | Trigger Keywords |
 |----------|-------|-------------|------------------|
-| 🔍 Core Investigation | **computer-investigation** | Device security analysis for Entra Joined, Hybrid Joined, and Entra Registered devices: Defender alerts, compliance, logged-on users, vulnerabilities, process/network/file events, automated investigations | "investigate computer", "investigate device", "investigate endpoint", "check machine", hostname |
-| 🔍 Core Investigation | **honeypot-investigation** | Honeypot security analysis: attack patterns, threat intel, vulnerabilities, executive reports | "honeypot", "attack analysis", "threat actor" |
-| 🔍 Core Investigation | **incident-investigation** | Comprehensive incident analysis for Defender XDR and Sentinel incidents: criticality assessment, entity extraction, filtering (RFC1918 IPs, tenant domains), recursive entity investigation using specialized skills | "investigate incident", "incident ID", "analyze incident", "triage incident", incident number |
-| 🔍 Core Investigation | **ioc-investigation** | Indicator of Compromise analysis: IP addresses, domains, URLs, file hashes. Includes Defender Threat Intelligence, Sentinel TI tables, CVE correlation, organizational exposure assessment, and affected device enumeration | "investigate IP", "investigate domain", "investigate URL", "investigate hash", "IoC", "is this malicious", "threat intel", IP/domain/URL/hash |
-| 🔍 Core Investigation | **user-investigation** | Azure AD user security analysis: sign-ins, anomalies, MFA, devices, audit logs, incidents, Identity Protection, reports (inline chat, markdown file, HTML) | "investigate user", "security investigation", "check user activity", UPN/email |
-| 🔐 Auth & Access | **authentication-tracing** | Azure AD authentication chain forensics: SessionId analysis, token reuse vs interactive MFA, geographic anomaly investigation, risk assessment | "trace authentication", "SessionId analysis", "token reuse", "geographic anomaly", "impossible travel" |
-| 🔐 Auth & Access | **ca-policy-investigation** | Conditional Access policy forensics: sign-in failure correlation, policy state changes, security bypass detection, privilege abuse analysis | "Conditional Access", "CA policy", "device compliance", "policy bypass", "53000", "50074", "530032" |
-| 📈 Behavioral Analysis | **scope-drift-detection/device** | Device/endpoint scope drift analysis: configurable-window process baseline for devices (fleet-wide or single-device). Weighted Drift Score (5 dimensions: Volume, Processes, Accounts, Process Chains, Signing Companies), correlated with SecurityAlert, DeviceInfo (uptime corroboration via MDE sensor health), DeviceProcessEvents. Supports inline chat and markdown file output | "device drift", "device process drift", "endpoint drift", "process baseline", "device behavioral change", "device scope drift" |
-| 📈 Behavioral Analysis | **scope-drift-detection/spn** | SPN scope drift analysis: 90-day behavioral baseline vs. 7-day recent activity for service principals. Weighted Drift Score (5 dimensions: Volume, Resources, IPs, Locations, FailRate), correlated with SecurityAlert and AuditLogs. Supports inline chat and markdown file output | "scope drift", "service principal drift", "SPN behavioral change", "SPN drift", "baseline deviation", "access expansion", "automation account drift" |
-| 📈 Behavioral Analysis | **scope-drift-detection/user** | User account scope drift analysis: 90-day behavioral baseline vs. 7-day recent activity for user accounts (UPNs). Two Drift Scores — Interactive (7 dimensions) and Non-Interactive (6 dimensions), correlated with SecurityAlert, AuditLogs, Signinlogs_Anomalies_KQL_CL, Identity Protection, CloudAppEvents (cloud app activity drift), and EmailEvents (email pattern drift). Supports inline chat and markdown file output | "user drift", "user behavioral change", "user scope drift", "UPN drift", "sign-in drift", "user baseline deviation" |
-| 🛡️ Posture & Exposure | **exposure-investigation** | Vulnerability & Exposure Management reporting: CVE assessment with exploit/CVSS data, security configuration compliance, end-of-support software, ExposureGraph critical assets, attack paths, MDC security/management recommendations, MDE sensor health, certificate status. Org-wide and per-device scope. Inline chat and markdown file output | "vulnerability report", "exposure report", "CVE assessment", "security posture", "vulnerability assessment", "exposure management", "patch status", "end of support", "security recommendations", "attack paths", "critical assets", "configuration compliance", "TVM", "threat and vulnerability management" |
-| 🛡️ Posture & Exposure | **ai-agent-posture** | AI agent security posture audit for Copilot Studio and M365 Copilot agents: agent inventory, authentication gaps, access control misconfigurations, MCP tool proliferation, knowledge source exposure, XPIA email exfiltration risk, hard-coded credential detection, HTTP request risk, creator governance, agent sprawl analysis. Agent Security Score with 5 risk dimensions. Inline chat and markdown file output | "AI agent posture", "agent security audit", "Copilot Studio agents", "agent inventory", "agent authentication", "unauthenticated agents", "agent tools", "MCP tools on agents", "agent knowledge sources", "XPIA risk", "agent sprawl", "AI agent risk", "agent governance" |
-| 🛡️ Posture & Exposure | **app-registration-posture** | App registration and service principal security posture: Graph API permission inventory (dangerous grants, permission concentration), app ownership risk assessment (non-admin owners, ownerless apps, Identity Protection cross-reference), credential hygiene (stale secrets, multi-credential apps), cross-tenant SPN exposure, KQL attack chain detection (risky user→app ops, credential add→SPN activation, ownership→credential chains, Graph API lateral movement, permission escalation, multi-app ownership spread). App Permission Risk Score with 5 dimensions. Graph API + Advanced Hunting (AuditLogs, AADServicePrincipalSignInLogs, AADUserRiskEvents, MicrosoftGraphActivityLogs). Inline chat and markdown file output | "app registration posture", "app registration abuse", "service principal permissions", "dangerous app permissions", "app ownership", "app credential abuse", "SPN lateral movement", "app consent grant", "overprivileged apps", "cross-tenant SPN", "app registration kill chain", "app persistence", "credential add chain", "app registration security", "Graph API permissions audit" |
-| 🛡️ Posture & Exposure | **email-threat-posture** | Email threat protection posture report for Microsoft Defender for Office 365: inbound mail flow overview, threat composition (phishing/spam/malware), email authentication (DMARC/DKIM/SPF/CompAuth), ZAP post-delivery remediation effectiveness, Safe Links click protection, attachment analysis, detection method breakdown, delivery disposition. Email Protection Score with 5 dimensions. Inline chat, markdown file, and SVG dashboard output | "email threat report", "email security posture", "email protection dashboard", "phishing report", "email threat summary", "MDO report", "Defender for Office 365 report", "email security assessment", "ZAP effectiveness", "Safe Links report", "email authentication report", "DMARC report", "spam report", "email volume report" |
-| 🔒 Data Security | **data-security-analysis** | DataSecurityEvents (Purview/IRM) analysis: SIT access breakdowns, sensitivity label access patterns, user risk ranking, file inventory, DLP policy correlation, Copilot SIT exposure, label change tracking (downgrades/removals), Copilot label exposure, SIT GUID-to-name resolution (built-in + PowerShell), label GUID-to-name resolution (built-in + PowerShell), anomaly detection (7d vs 30d baseline spikes). Designed for 100k+ user environments with aggressive summarization. Inline chat and markdown file output | "data security", "sensitive information type", "SIT access", "who accessed sensitive data", "DLP events", "DataSecurityEvents", "EDM access", "exact data match", "credit card access", "sensitive file access", "insider risk activity", "Purview data security", "SIT breakdown", "classify access", "sensitivity label", "labeled documents", "label downgrade", "label change", "Copilot label exposure" |
-| 🛡️ Posture & Exposure | **identity-posture** | Identity security posture report using IdentityAccountInfo (MDI/Advanced Hunting): multi-provider account inventory (Entra ID, Active Directory, Okta, SailPoint, CyberArk, Ping), privileged account audit with role distribution, stale/disabled/deleted account hygiene, password posture analysis, multi-provider identity linking, risk level distribution, MDI tag analysis (Sensitive/Honeytoken), service account identification, account creation trends. Identity Posture Score with 5 dimensions. Cross-table enrichment with IdentityInfo (RiskLevel, BlastRadius), IdentityLogonEvents, and SigninLogs. Inline chat and markdown file output | "identity posture", "identity report", "identity security", "account inventory", "privileged accounts", "stale accounts", "identity hygiene", "identity provider", "multi-provider identity", "MDI posture", "identity risk", "honeytoken", "service accounts", "password posture", "identity governance", "IdentityAccountInfo" |
-| 📊 Visualization | **geomap-visualization** | Interactive world map visualization for Sentinel data: attack origin maps, geographic threat distribution, IP geolocation with enrichment drill-down | "geomap", "world map", "attack map", "show on map", "attack origins" |
-| 📊 Visualization | **heatmap-visualization** | Interactive heatmap visualization for Sentinel data: attack patterns by time, activity grids, IP vs hour matrices, threat intel drill-down panels | "heatmap", "show heatmap", "visualize patterns", "activity grid" |
-| 📊 Visualization | **svg-dashboard** | SVG data visualization dashboards: dual-mode renderer supporting manifest-driven structured dashboards (from skill reports with `svg-widgets.yaml`) and freeform adaptive visualizations from ad-hoc investigation data. Component library: KPI cards, score cards, bar charts, line charts, donut charts, waterfall charts, tables, recommendation cards, assessment banners. SharePoint Dark Theme default palette | "generate SVG dashboard", "create a visual dashboard", "visualize this report", "SVG from the report", "visualize results", "create SVG chart", "SVG from this data" |
-| 🔍 Quick Scan | **threat-pulse** | Rapid 15-minute broad-spectrum security scan across 9 domains: active incidents, identity anomalies (custom anomaly table with Identity Protection fallback), risky sign-ins, password spray / brute-force, SPN behavioral drift, device process drift, rare process chains, email threats, cloud app suspicious activity (CloudAppEvents), privileged admin operations, critical asset exposure, and exploitable CVEs. 13 queries executed in parallel batches, producing prioritized findings with color-coded verdicts (🔴 Escalate / 🟠 Investigate / 🟡 Monitor / ✅ Clear) and drill-down recommendations pointing to specialized skills. Cross-query correlation detects multi-domain attack patterns. Inline chat and markdown file output | "threat pulse", "quick scan", "security pulse", "morning hunt", "hunting sprint", "15 minute scan", "quick recon", "daily scan", "SOC pulse", "what should I focus on", "security overview", "threat overview", "broad scan", "posture check", "what can you do", "where do I start", "getting started", "help me investigate", "run a scan", "how do I use this", "show me what you can do", "what's going on" |
-| �🔧 Tooling & Monitoring | **detection-authoring** | Create, deploy, update, and manage Defender XDR custom detection rules via Graph API. Query adaptation from Sentinel KQL, manifest-driven batch deployment via PowerShell, lifecycle management. Companion script: Deploy-CustomDetections.ps1 | "create custom detection", "deploy detection", "detection rule", "custom detection", "deploy rule", "batch deploy" |
-| 🔧 Tooling & Monitoring | **kql-query-authoring** | KQL query creation using schema validation, community examples, Microsoft Learn | "write KQL", "create KQL query", "help with KQL", "query [table]" |
-| 🔧 Tooling & Monitoring | **mcp-usage-monitoring** | MCP server usage monitoring and audit: Graph MCP endpoint analysis, Sentinel MCP auth events, Azure MCP ARM operations, workspace query governance, MCP proportion analysis, sensitive API detection, off-hours activity, user attribution, MCP Usage Score with 5 health/risk dimensions. Supports inline chat and markdown file output | "MCP usage", "MCP server monitoring", "MCP activity", "MCP audit", "Graph MCP", "Sentinel MCP", "Azure MCP", "AI agent monitoring", "tool usage monitoring", "MCP breakdown", "who is using MCP" |
-| 🔧 Tooling & Monitoring | **mitre-coverage-report** | MITRE ATT&CK coverage analysis: YAML-driven PowerShell pipeline gathers analytic rule MITRE tags, custom detection techniques, SOC Optimization recommendations, alert/incident operational data via az rest/az monitor/Graph API, writes a deterministic scratchpad, LLM renders the report. Covers tactic-level coverage matrix, technique-level drill-down with rule mapping, coverage gap identification, SOC Optimization threat scenario alignment (AiTM, ransomware, BEC, credential exploitation), untagged rule remediation with AI-suggested tags, ICS/OT technique tracking, MITRE Coverage Score (5 weighted dimensions: breadth, balance, operational, tagging, SOC alignment). Inline chat and markdown file output. **Companion files:** SKILL-report.md (rendering templates), mitre-attck-enterprise.json (ATT&CK v16.1 reference) | "MITRE coverage", "MITRE ATT&CK coverage", "MITRE report", "ATT&CK coverage", "tactic coverage", "technique coverage", "coverage gaps", "MITRE score", "detection coverage report", "MITRE matrix", "kill chain coverage", "SOC optimization coverage", "threat scenario coverage", "untagged rules", "MITRE tagging" |
-| 🔧 Tooling & Monitoring | **sentinel-ingestion-report** | Sentinel workspace ingestion analysis: YAML-driven PowerShell pipeline gathers all data via az monitor/az rest/Graph API, writes a deterministic scratchpad, LLM renders the report. Covers table-level volume breakdown, tier classification (Analytics/Basic/Data Lake), SecurityEvent/Syslog/CommonSecurityLog deep dives, ingestion anomaly detection (24h and WoW), analytic rule inventory via REST API, rule health via SentinelHealth, detection coverage cross-reference, tier migration candidates with DL-eligibility lookup, license benefit analysis (DfS P2 500MB/server/day, M365 E5 data grant). **Post-report drill-down:** rule cross-referencing (AR via REST + CD via Graph API), ASIM parser dependency checks, error handling. Inline chat and markdown file output. **Companion files:** SKILL-report.md (rendering templates), SKILL-drilldown.md (drill-down patterns + pitfalls) | "ingestion report", "usage report", "data volume", "cost analysis", "table breakdown", "data lake tier", "ingestion anomaly", "cost optimization", "billable data", "workspace usage", "table ingestion", "SecurityEvent breakdown", "Defender for Servers benefit", "E5 ingestion benefit", "drill down", "which rules use", "rule cross-reference", "custom detection rules", "ASIM dependency", "ingestion drill-down" |
+| 🔍 Core | **computer-investigation** | Device security analysis (alerts, compliance, vulnerabilities, process/network/file events) | "investigate computer", "investigate device", "investigate endpoint", "check machine", hostname |
+| 🔍 Core | **honeypot-investigation** | Honeypot attack analysis with threat intel and executive reports | "honeypot", "attack analysis", "threat actor" |
+| 🔍 Core | **incident-investigation** | Defender XDR / Sentinel incident triage with recursive entity investigation | "investigate incident", "incident ID", "analyze incident", "triage incident", incident number |
+| 🔍 Core | **ioc-investigation** | IoC analysis for IPs, domains, URLs, file hashes with TI enrichment | "investigate IP", "investigate domain", "investigate URL", "investigate hash", "IoC", "is this malicious", "threat intel", IP/domain/URL/hash |
+| 🔍 Core | **user-investigation** | Entra ID user security analysis (sign-ins, MFA, anomalies, incidents, Identity Protection) | "investigate user", "security investigation", "check user activity", UPN/email |
+| 🔐 Auth | **authentication-tracing** | Authentication chain forensics (SessionId, token reuse, geographic anomalies) | "trace authentication", "SessionId analysis", "token reuse", "geographic anomaly", "impossible travel" |
+| 🔐 Auth | **ca-policy-investigation** | Conditional Access policy forensics and bypass detection | "Conditional Access", "CA policy", "device compliance", "policy bypass", "53000", "50074", "530032" |
+| 📈 Behavioral | **scope-drift-detection/device** | Device process baseline drift analysis with weighted Drift Score | "device drift", "device process drift", "endpoint drift", "process baseline", "device behavioral change", "device scope drift" |
+| 📈 Behavioral | **scope-drift-detection/spn** | SPN behavioral drift (90d baseline vs 7d recent) with weighted Drift Score | "scope drift", "service principal drift", "SPN behavioral change", "SPN drift", "baseline deviation", "access expansion", "automation account drift" |
+| 📈 Behavioral | **scope-drift-detection/user** | User sign-in drift (Interactive + Non-Interactive Drift Scores) | "user drift", "user behavioral change", "user scope drift", "UPN drift", "sign-in drift", "user baseline deviation" |
+| 🛡️ Posture | **exposure-investigation** | Vulnerability & Exposure Management (CVEs, configs, attack paths, critical assets) | "vulnerability report", "exposure report", "CVE assessment", "security posture", "TVM", "attack paths", "critical assets" |
+| 🛡️ Posture | **ai-agent-posture** | AI agent security audit (Copilot Studio, auth gaps, MCP tools, XPIA risk) | "AI agent posture", "agent security audit", "Copilot Studio agents", "agent inventory", "unauthenticated agents", "XPIA risk", "agent sprawl" |
+| 🛡️ Posture | **app-registration-posture** | App registration posture (permissions, ownership, credentials, KQL attack chains) | "app registration posture", "service principal permissions", "dangerous app permissions", "app credential abuse", "SPN lateral movement", "app consent grant" |
+| 🛡️ Posture | **email-threat-posture** | MDO email threat posture (phishing, DMARC/DKIM/SPF, ZAP, Safe Links) | "email threat report", "email security posture", "phishing report", "MDO report", "ZAP effectiveness", "DMARC report" |
+| 🔒 Data | **data-security-analysis** | DataSecurityEvents analysis (SIT access, sensitivity labels, DLP, Copilot exposure) | "data security", "sensitive information type", "SIT access", "DLP events", "DataSecurityEvents", "sensitivity label", "label downgrade", "Copilot label exposure" |
+| 🛡️ Posture | **identity-posture** | Identity posture via IdentityAccountInfo (multi-provider, privileged accounts, hygiene) | "identity posture", "identity report", "account inventory", "privileged accounts", "stale accounts", "identity hygiene", "IdentityAccountInfo" |
+| 📊 Viz | **geomap-visualization** | Interactive world map for attack origins and IP geolocation | "geomap", "world map", "attack map", "show on map", "attack origins" |
+| 📊 Viz | **heatmap-visualization** | Interactive heatmap for time-based activity patterns | "heatmap", "show heatmap", "visualize patterns", "activity grid" |
+| 📊 Viz | **svg-dashboard** | SVG dashboards (KPI cards, charts, tables) from reports or ad-hoc data | "generate SVG dashboard", "create a visual dashboard", "visualize this report", "SVG from the report", "create SVG chart" |
+| 🔍 Scan | **threat-pulse** | 15-min broad security scan across 9 domains with prioritized drill-down recommendations | "threat pulse", "quick scan", "security pulse", "morning hunt", "what should I focus on", "what can you do", "where do I start", "what's going on" |
+| 🔧 Tooling | **detection-authoring** | Create/deploy/manage Defender XDR custom detection rules via Graph API | "create custom detection", "deploy detection", "detection rule", "custom detection", "deploy rule", "batch deploy" |
+| 🔧 Tooling | **kql-query-authoring** | KQL query creation with schema validation and community examples | "write KQL", "create KQL query", "help with KQL", "query [table]" |
+| 🔧 Tooling | **mcp-usage-monitoring** | MCP server usage audit (Graph/Sentinel/Azure MCP telemetry analysis) | "MCP usage", "MCP server monitoring", "MCP activity", "MCP audit", "who is using MCP" |
+| 🔧 Tooling | **mitre-coverage-report** | MITRE ATT&CK coverage analysis (rule mapping, gaps, SOC Optimization alignment) | "MITRE coverage", "MITRE report", "ATT&CK coverage", "technique coverage", "coverage gaps", "MITRE score" |
+| 🔧 Tooling | **sentinel-ingestion-report** | Sentinel ingestion analysis (volume, tiers, anomalies, rule health, cost optimization) | "ingestion report", "usage report", "data volume", "cost analysis", "table breakdown", "ingestion anomaly" |
 
 ### Skill Detection Workflow
 
@@ -535,64 +508,9 @@ Azure AD and Microsoft 365 API integration:
 Interactive heatmap visualization for Sentinel security data, rendered inline in VS Code chat:
 - **mcp_sentinel-heat_show-signin-heatmap**: Display aggregated data as an interactive heatmap with optional threat intel drill-down
 - **Location**: `mcp-apps/sentinel-heatmap-server/` (local TypeScript/React MCP App)
-
-**Tool Parameters:**
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `data` | ✅ | Array of `{row, column, value}` objects from KQL query |
-| `title` | ❌ | Heatmap title (default: "Sign-In Heatmap") |
-| `rowLabel` | ❌ | Label for rows (e.g., "IP Address", "Application") |
-| `colLabel` | ❌ | Label for columns (e.g., "Hour", "Day") |
-| `valueLabel` | ❌ | Label for cell values (e.g., "Failed Attempts", "Sign-ins") |
-| `colorScale` | ❌ | Color scheme: `green-red` (activity), `blue-red` (threats), `blue-yellow` (neutral) |
-| `enrichment` | ❌ | Array of IP enrichment objects for click-to-expand threat intel panel |
-
-**Enrichment Schema (for drill-down panels):**
-```json
-{
-  "ip": "80.94.95.83",
-  "city": "Timișoara",
-  "country": "RO",
-  "org": "AS204428 SS-Net",
-  "is_vpn": false,
-  "abuse_confidence_score": 100,
-  "total_reports": 975,
-  "last_reported": "2026-01-29",
-  "threat_categories": ["RDP Brute-Force", "Hacking", "Port Scan"]
-}
-```
-
-**When to Use:**
-- Visualizing attack patterns by IP and time (honeypot investigations)
-- Sign-in activity heatmaps by application and hour
-- Failed authentication attempts by location and day
-- Any aggregated Sentinel data with row/column/value structure
-
-**KQL Query Pattern for Heatmap Data:**
-```kql
-<Table>
-| where TimeGenerated between (start .. end)
-| summarize value = count() by row = <dimension1>, column = format_datetime(bin(TimeGenerated, 1h), "HH:mm")
-| project row, column, value
-| order by column asc
-```
-
-**Example - Attack Heatmap by IP and Hour:**
-```kql
-SecurityEvent
-| where TimeGenerated between (datetime(2026-01-26) .. datetime(2026-01-27))
-| where EventID == 4625
-| summarize value = count() by row = IpAddress, column = format_datetime(bin(TimeGenerated, 1h), "HH:mm")
-| project row, column, value
-| order by column asc, value desc
-```
-
-**Features:**
-- 📊 Dark theme matching VS Code (Microsoft brand colors)
-- 🎨 Three color scales for different use cases
-- 🔍 Hover tooltips showing full details
-- 🖱️ Click-to-expand threat intel panels (when enrichment data provided)
-- 📈 Auto-calculated statistics (total, max, min, unique rows/columns)
+- **Data format**: Array of `{row, column, value}` objects. Optional: `title`, `rowLabel`, `colLabel`, `valueLabel`, `colorScale` (`green-red`/`blue-red`/`blue-yellow`), `enrichment` (IP threat intel for drill-down panels)
+- **When to Use**: Visualizing attack patterns by IP and time, sign-in activity by app/hour, failed auth by location/day
+- **See**: `heatmap-visualization` skill for full usage guidance, KQL query patterns, and enrichment schema
 
 ### Azure MCP Server
 Direct Azure Resource Manager and Azure Monitor integration for quick ad-hoc queries:
@@ -601,31 +519,7 @@ Direct Azure Resource Manager and Azure Monitor integration for quick ad-hoc que
 - **`mcp_azure-mcp-ser_group_list`**: List resource groups in a subscription
 - **`mcp_azure-mcp-ser_subscription_list`**: List subscriptions
 
-**Required parameters** — read from `config.json` (`azure_mcp` section):
-
-| Parameter | Source | Why |
-|-----------|--------|-----|
-| `tenant` | `config.json → azure_mcp.tenant` | Prevents cross-tenant auth errors |
-| `subscription` | `config.json → azure_mcp.subscription` | Targets correct subscription |
-| `resource-group` | `config.json → azure_mcp.resource_group` | Required for `workspace_log_query` |
-| `workspace` | `config.json → azure_mcp.workspace_name` | LA workspace display name |
-
-**Calling `workspace_log_query`:**
-```json
-{
-  "command": "monitor_workspace_log_query",
-  "parameters": {
-    "resource-group": "<from config.json>",
-    "workspace": "<from config.json>",
-    "tenant": "<from config.json>",
-    "subscription": "<from config.json>",
-    "table": "AzureActivity",
-    "query": "AzureActivity | where TimeGenerated >= ago(1h) | take 10",
-    "hours": 1,
-    "limit": 20
-  }
-}
-```
+**Required parameters:** Read `tenant`, `subscription`, `resource-group`, and `workspace` from `config.json` (`azure_mcp` section). See [Environment Configuration](#-environment-configuration) for field mapping.
 
 **When to use Azure MCP Server `workspace_log_query` vs Sentinel Data Lake `query_lake`:**
 
@@ -635,16 +529,9 @@ Direct Azure Resource Manager and Azure Monitor integration for quick ad-hoc que
 | **Auth** | DefaultAzureCredential (VS Code cached) | Sentinel Platform Services OAuth |
 | **Params** | Needs `resource-group` + `workspace` name + `table` | Needs `workspaceId` (GUID) |
 | **Retention** | 90 days | 90 days (same workspace) |
-| **Telemetry** | AppId `04b07795` via Azure CLI credential — `RequestClientApp` is **empty** in LAQueryLogs (not a unique fingerprint). Azure MCP appends `\n| limit N` to query text as best differentiator. 🔄 Previously `1950a258` + `csharpsdk,LogAnalyticsPSClient` — obsolete. | Under Sentinel MCP AppId (distinguishable) |
 | **Best for** | Quick lookups, AzureActivity, ad-hoc exploration | Skill-based investigation workflows |
 
-**🔍 Azure MCP Server Detection (🔄 Updated Feb 2026):** Azure MCP Server now uses `DefaultAzureCredential` → **Azure CLI** credential, producing AppId `04b07795-8ddb-461a-bbee-02f9e1bf7b46`. The previously documented fingerprint (AppId `1950a258` + `csharpsdk,LogAnalyticsPSClient`) is **obsolete** — only 1 occurrence found in 30-day lookback.
-- **SigninLogs:** AppId `04b07795` — shared with manual Azure CLI, no unique sign-in fingerprint for Azure MCP
-- **LAQueryLogs:** AADClientId `04b07795`, `RequestClientApp` is **empty**. Best differentiator: Azure MCP `monitor_workspace_log_query` appends `\n| limit N` to query text
-- **AzureActivity:** Claims.appid `04b07795` (write operations only — reads not logged)
-- **Token caching:** Sign-in events represent token acquisitions, NOT individual API calls. Count sign-in clusters as "access sessions".
-
-See `.github/skills/mcp-usage-monitoring/SKILL.md` Queries 25-27 for detection queries.
+> **Azure MCP telemetry detection:** See `mcp-usage-monitoring` skill (Queries 25-27) for Azure MCP Server fingerprinting and usage analysis.
 
 - **Documentation**: https://learn.microsoft.com/en-us/azure/developer/azure-mcp-server/overview
 
@@ -682,58 +569,12 @@ Attack surface analysis tools for the Microsoft Security Exposure Management gra
 #### Signinlogs_Anomalies_KQL_CL
 **Purpose:** Pre-computed sign-in anomaly detection table populated by hourly KQL job. Tracks new IPs and device combinations against 90-day baseline.
 
-**Key Features:**
 - **Anomaly Types:** `NewInteractiveIP`, `NewInteractiveDeviceCombo`, `NewNonInteractiveIP`, `NewNonInteractiveDeviceCombo`
-- **Detection Model:** Compares last 1 hour activity against 90-day baseline (excluding most recent hour)
-- **IPv6 Filtering:** Excludes transient IPv6 addresses to reduce false positives
-- **Geographic Novelty:** Tracks country/city/state changes with novelty flags
-- **Severity Scoring:** Based on artifact hit frequency and geographic novelty
+- **Detection Model:** Compares last 1 hour activity against 90-day baseline; severity scored by artifact hit frequency + geographic novelty (`CountryNovelty`, `CityNovelty`, `StateNovelty`)
+- **Key Columns:** `DetectedDateTime`, `UserPrincipalName`, `AnomalyType`, `Value`, `Severity`, `ArtifactHits`, `BaselineSize`, geographic novelty flags, `Baseline*List` arrays
+- **When to Use:** Rapid anomaly triage during user investigations, impossible travel detection, token theft indicators (non-interactive anomalies with geo changes)
 
-**Key Columns:**
-- `DetectedDateTime`: When anomaly was detected
-- `UserPrincipalName`: Affected user
-- `AnomalyType`: Category of anomaly
-- `Value`: Anomalous artifact (IP address or OS|BrowserFamily combo)
-- `Severity`: High/Medium/Low/Informational (based on hit count + geo novelty)
-- `ArtifactHits`: Count of occurrences in 1-hour window
-- `CountryNovelty`, `CityNovelty`, `StateNovelty`: Geographic novelty flags
-- `BaselineSize`: Historical artifact baseline count
-- `FirstSeenRecent`: First appearance timestamp
-- `Baseline*List`: Arrays of historical IPs, countries, cities, devices, browsers
-
-**When to Use:**
-- Rapid anomaly triage during user investigations
-- Identifying suspicious IP origins or device changes
-- Geographic impossible travel detection
-- Token theft indicators (non-interactive anomalies with geo changes)
-- Baseline comparison for new authentication patterns
-
-**Example Query:**
-```kql
-// Get high-severity anomalies for user
-Signinlogs_Anomalies_KQL_CL
-| where TimeGenerated > ago(14d)
-| where UserPrincipalName =~ '<UPN>'
-| extend Severity = case(
-    BaselineSize < 3, "Informational",
-    CountryNovelty and CityNovelty and ArtifactHits >= 20, "High",
-    ArtifactHits >= 10 or CountryNovelty or CityNovelty or StateNovelty, "Medium",
-    ArtifactHits >= 5, "Low",
-    "Informational")
-| where Severity in ("High", "Medium")
-| project DetectedDateTime, AnomalyType, Value, Severity, Country, City, 
-    ArtifactHits, CountryNovelty, CityNovelty, OS, BrowserFamily
-| order by DetectedDateTime desc
-```
-
-**Severity Thresholds (Hourly Detection):**
-- **Informational (baseline guardrail):** `BaselineSize < 3` — user still building 90-day baseline; all anomaly types suppressed (Q3/Identity Protection covers genuine new-account compromise)
-- **High:** ≥20 hits/hour + geographic novelty (very aggressive use)
-- **Medium:** ≥10 hits/hour OR any geographic novelty
-- **Low:** ≥5 hits/hour without geographic novelty
-- **Informational:** 1-4 hits/hour
-
-**Full Documentation:** See [docs/Signinlogs_Anomalies_KQL_CL.md](../docs/Signinlogs_Anomalies_KQL_CL.md) for complete schema and triage guidance.
+**Full Documentation:** See [docs/Signinlogs_Anomalies_KQL_CL.md](../docs/Signinlogs_Anomalies_KQL_CL.md) for complete schema, example queries, and severity thresholds.
 
 ---
 
@@ -878,55 +719,6 @@ python enrich_ips.py --file temp/investigation_user_20251130.json
 ```
 
 **Output:** Detailed per-IP results (city, country, ISP/ASN, VPN/proxy/Tor flags, AbuseIPDB score + recent report comments) and a JSON export saved to `temp/`.
-
----
-
-### Best Practices for AuditLogs Queries
-
-**CRITICAL: Use broad, simple filters for OperationName searches**
-
-When searching AuditLogs for specific operations (password resets, role changes, policy modifications, etc.):
-
-**❌ DON'T use overly specific filters:**
-```kql
-| where OperationName has_any ("password", "reset")  // May miss operations
-| where OperationName == "Reset user password"       // Too restrictive - misses variations
-```
-
-**✅ DO use broad keyword matching:**
-```kql
-| where OperationName has "password"  // Catches all password-related operations
-| where OperationName has "role"      // Catches all role-related operations
-| where OperationName has "policy"    // Catches all policy-related operations
-```
-
-**Why this matters:**
-- OperationName values vary: "Reset user password", "Change user password", "Self-service password reset", "Update password"
-- `has_any()` requires exact word matches and can be unpredictable
-- Simple `has "keyword"` is more reliable for exploratory queries
-- You can always filter results further in subsequent `summarize` or `where` clauses
-
-**Example - Finding password operations:**
-```kql
-AuditLogs
-| where TimeGenerated between (start .. end)
-| where OperationName has "password"  // Broad search
-| where tostring(InitiatedBy) has '<UPN>' or tostring(TargetResources) has '<UPN>'
-| summarize Count = count() by OperationName  // Then see what operations exist
-| order by Count desc
-```
-
-**Then refine if needed:**
-```kql
-// After seeing results, target specific operation if necessary
-| where OperationName == "Reset user password"
-```
-
-**Field Matching Best Practices:**
-- **Always use `tostring()` for dynamic fields:** `tostring(InitiatedBy)`, `tostring(TargetResources)`
-- **Use `has` for substring matching:** `tostring(InitiatedBy) has '<UPN>'`
-- **Use `=~` for exact case-insensitive match:** `Identity =~ '<UPN>'`
-- **Avoid direct field access on complex JSON:** Parse first with `parse_json()` then extract
 
 ---
 
