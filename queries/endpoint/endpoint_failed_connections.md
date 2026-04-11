@@ -2,9 +2,9 @@
 
 **Created:** 2026-01-13  
 **Platform:** Microsoft Sentinel  
-**Tables:** DeviceLogonEvents, DeviceNetworkEvents  
-**Keywords:** failed logon, brute force, password spray, failed connection, port scan, blocked attack, endpoint, device, RDP  
-**MITRE:** T1110, T1046, TA0006, TA0007  
+**Tables:** DeviceLogonEvents, DeviceNetworkEvents, SecurityEvent, W3CIISLog  
+**Keywords:** failed logon, brute force, password spray, failed connection, port scan, blocked attack, endpoint, device, RDP, IIS, authentication, honeypot, multi-layer  
+**MITRE:** T1110, T1046, T1190, TA0006, TA0007, TA0001  
 **Domains:** endpoint, identity  
 **Timeframe:** Last 14 days (configurable)
 
@@ -21,9 +21,42 @@ All queries have been tested against live Sentinel data and use proper column na
 
 ---
 
+## Multi-Layer Attack Detection Model
+
+Internet-facing servers (especially honeypots) are attacked across three distinct layers. Each layer requires a **different table** and provides unique visibility:
+
+| Layer | Table | What It Captures | Key Filter / EventID | Visibility |
+|-------|-------|-------------------|---------------------|------------|
+| **1. Network** | `DeviceNetworkEvents` | TCP/UDP handshakes, connection attempts | `LocalPort in (3389, 80, 443, 445, 22)` | Attacker reached NIC — measures scanning volume |
+| **2. Auth** | `SecurityEvent` | Windows logon attempts (success/failure) | EventID `4625` / `4624` / `4771` | Attacker supplied credentials — measures brute force |
+| **3. Application** | `W3CIISLog` | IIS HTTP requests (200/401/403/500) | `scStatus == 401` | Attacker reached IIS — measures web exploitation |
+
+**Why this matters:**
+
+- **`DeviceLogonEvents`** (MDE table) captures endpoint-managed logon telemetry but **dramatically under-samples external RDP/NLA brute force** on Windows Server. Live testing shows MDE reports ~0.2% of the actual volume (e.g., 47 events vs 20,000 in SecurityEvent for the same attacker IP). `SecurityEvent` (Windows Security auditing) is the **only authoritative source** for EventID 4625.
+- **`DeviceNetworkEvents`** captures TCP-level events, but brute force attacks that reach the auth layer appear as **successful TCP connections** (`InboundConnectionAccepted`), NOT as `ConnectionFailed` or `InboundConnectionBlocked`. The TCP handshake succeeds — authentication fails at a higher layer. This means Query 2 (failed/blocked connections) will miss RDP brute force entirely. Use Query 2B (successful inbound) + Query 1B (SecurityEvent 4625) for the complete picture.
+- A single attacker IP may appear in **all three layers**: TCP handshake (DeviceNetworkEvents) → RDP authentication failure (SecurityEvent 4625) → IIS exploitation attempt (W3CIISLog 401).
+- Zero results at one layer doesn't mean no attack — it means the attack was stopped at a lower layer or the table has insufficient coverage.
+
+**Signal ratio across layers (observed on honeypot server):**
+
+| Layer | Table | Same Attacker IP | Coverage |
+|-------|-------|-------------------|----------|
+| Network | `DeviceNetworkEvents` (InboundConnectionAccepted) | 1–4 events | ~0.005% |
+| Auth (MDE) | `DeviceLogonEvents` (LogonFailed) | 47 events | ~0.2% |
+| Auth (Windows) | `SecurityEvent` (EventID 4625) | 20,000 events | **100% (authoritative)** |
+
+> **⚠️ Key takeaway:** MDE heavily samples/aggregates network and logon events. For accurate brute-force volume assessment, **always use SecurityEvent** (Query 1B). DeviceLogonEvents (Query 1) is useful for detecting the presence of attacks but will dramatically undercount their volume.
+
+**Investigation workflow:** Query all three layers, then cross-correlate IPs to build the full attack chain. Start with SecurityEvent (Query 1B) for accurate volume, then use DeviceNetworkEvents (Query 2B) for successful connection enumeration.
+
+---
+
 ## Query 1: Devices with Multiple Failed Logon Attempts
 
 **Purpose:** Detect potential brute force attacks or credential guessing attempts targeting your devices.
+
+> **⚠️ Coverage Note:** `DeviceLogonEvents` is MDE-managed telemetry that **dramatically under-samples external RDP brute force** — live testing shows it captures approximately **0.2% of actual volume** compared to SecurityEvent (e.g., 47 vs 20,000 events for the same attacker IP). For authoritative failed RDP logon data, **always use Query 1B** (`SecurityEvent` EventID 4625). This query is useful for detecting the *presence* of attacks but will severely undercount volume. Best suited for internal logon failures and credential misuse detected by Defender for Endpoint.
 
 **Thresholds:**
 - Minimum 5 failed logon attempts per device/IP combination
@@ -77,25 +110,188 @@ DeviceLogonEvents
 - Short `Duration` with many attempts = automated attack tool
 - `LogonType` = "Network" from external IP = remote attack
 
-**Example Output (Real Honeypot Attack - Jan 8, 2026):**
-```
-DeviceName: <HONEYPOT_DEVICE>
-RemoteIP: 185.156.73.74
-FailedAttempts: 55
-UniqueAccounts: 35
-Accounts: ["sql3","openpgsvc","demouser","sql1","user","admin","administrator"...]
-Duration: 00:00:05.96
-LogonTypes: ["Network"]
-```
-This shows a **coordinated password spraying attack** - 35 different accounts attempted in 6 seconds from single IP.
+---
 
-**IP Enrichment Results:**
-- 185.156.73.74: Netherlands hosting, 31% abuse score, 17 AbuseIPDB reports (RDP brute force)
-- 185.156.73.169: Netherlands hosting, 27% abuse score, 13 reports (same campaign)
-- 185.243.96.63: Ukraine hosting, 22% abuse score, 6 reports
-- 185.243.96.116: Ukraine hosting, **100% abuse score, 2625 reports** (active global threat actor)
+## Query 1B: Failed RDP/Auth via SecurityEvent (Layer 2 — Authentication)
 
-All 4 IPs successfully connected to RDP (port 3389) within same time window - **authentication layer detected them after network layer was bypassed.**
+**Purpose:** Detect failed RDP logon attempts using Windows Security Event log — the authoritative source for authentication-layer brute force on Windows servers. This query captures EventID 4625 (logon failure) which `DeviceLogonEvents` may miss for external RDP attacks.
+
+**Layer:** Authentication (see [Multi-Layer Attack Detection Model](#multi-layer-attack-detection-model))
+
+**Key Differences from Query 1:**
+
+| Factor | Query 1 (`DeviceLogonEvents`) | Query 1B (`SecurityEvent`) |
+|--------|-------------------------------|---------------------------|
+| Source | MDE agent telemetry | Windows Security audit log |
+| RDP coverage | May miss external NLA failures | Authoritative for all logon types |
+| Computer field | `DeviceName` (lowercase) | `Computer` (often UPPERCASE — use `=~` for case-insensitive) |
+| IP extraction | `RemoteIP` column | `IpAddress` column (may be `-` or empty; extract from `EventData` as fallback) |
+
+**Thresholds:**
+- Minimum 5 failed logon attempts per Computer/IP combination
+- Excludes IpAddress of `-` or empty (local/system failures)
+- LogonType 10 = RemoteInteractive (RDP); LogonType 3 = Network
+
+<!-- cd-metadata
+cd_ready: true
+schedule: "24H"
+category: "CredentialAccess"
+title: "RDP Brute Force: {{FailedAttempts}} failed logons on {{Computer}} from {{SourceIP}}"
+impactedAssets:
+  - type: "host"
+    identifier: "hostName"
+adaptation_notes: "Remove `| take 30` and `| order by` for production CD deployment. Threshold (>=5 attempts) is tunable. IpAddress extraction fallback (EventData parsing) can be removed if IpAddress column is reliably populated in your workspace. Use `SecurityEvent` table — requires Sentinel Data Lake or AH with connected workspace."
+-->
+```kql
+// Query 1B: Failed RDP/Auth via SecurityEvent (14 days)
+// Authoritative source for Windows logon failures — captures what DeviceLogonEvents misses
+SecurityEvent
+| where TimeGenerated > ago(14d)
+| where EventID == 4625
+// Extract IP — prefer IpAddress column, fall back to EventData parsing
+| extend SourceIP = iff(IpAddress != "-" and isnotempty(IpAddress), IpAddress,
+    extract(@"Source Network Address:\s+([^\s]+)", 1, tostring(EventData)))
+| where isnotempty(SourceIP) and SourceIP != "-" and SourceIP != "127.0.0.1"
+| summarize
+    FailedAttempts = count(),
+    UniqueAccounts = dcount(TargetAccount),
+    Accounts = make_set(TargetAccount, 10),
+    LogonTypes = make_set(LogonType),
+    FirstFailed = min(TimeGenerated),
+    LastFailed = max(TimeGenerated)
+    by Computer, SourceIP
+| where FailedAttempts >= 5
+| extend Duration = LastFailed - FirstFailed
+| project Computer, SourceIP, FailedAttempts, UniqueAccounts, Accounts,
+    LogonTypes, FirstFailed, LastFailed, Duration
+| order by FailedAttempts desc
+| take 30
+```
+
+**Expected Results:**
+- **Computer**: Target device (often UPPERCASE in SecurityEvent)
+- **SourceIP**: Attacking IP address
+- **FailedAttempts**: Total failed logon attempts
+- **UniqueAccounts**: Number of different accounts targeted (high count = password spray)
+- **Accounts**: Up to 10 account names attempted
+- **LogonTypes**: `3` = Network, `10` = RemoteInteractive (RDP), `8` = NetworkCleartext
+
+**When to prefer Query 1B over Query 1:**
+- Investigating **RDP brute force** against internet-facing servers
+- Query 1 returns 0 results but DeviceNetworkEvents shows inbound connections to port 3389
+- You need the **authoritative** Windows Security audit log rather than MDE agent telemetry
+
+**Troubleshooting Low Results:**
+
+If Query 1B returns fewer results than expected, verify:
+
+1. **Windows audit policy** on the target server logs Logon Failure events:
+   ```powershell
+   auditpol /get /subcategory:"Logon"
+   # Expected: Logon: Success and Failure
+   ```
+2. **SecurityEvent data connector** in Sentinel collects EventID 4625 (configure under "Common" or "All Events" tier, not "Minimal")
+3. **Server uptime** — intermittent availability reduces auth event volume even when scanning is constant
+
+---
+
+## Query 1C: IIS Authentication Failures via W3CIISLog (Layer 3 — Application)
+
+**Purpose:** Detect IIS-level brute force and web exploitation attempts. When attackers reach an IIS web server, their activity appears as HTTP 401 (Unauthorized) responses and exploitation payloads in W3CIISLog — a data source invisible to both `DeviceLogonEvents` and `SecurityEvent`.
+
+**Layer:** Application (see [Multi-Layer Attack Detection Model](#multi-layer-attack-detection-model))
+
+**Thresholds:**
+- Minimum 3 failed requests per IP (low threshold — IIS exploitation attempts are often low-volume, high-impact)
+- Filters to HTTP `401`/`403` status codes for attack detection
+
+<!-- cd-metadata
+cd_ready: false
+adaptation_notes: "Aggregates by client IP across all target URIs — would need restructuring for per-path alerting in CD. `scStatus` grouping produces enriched context but complicates single-entity mapping. Consider splitting into separate 401-focused (brute force) and 404-focused (recon) detection rules for CD deployment."
+-->
+```kql
+// Query 1C: IIS Brute Force & Web Exploitation via W3CIISLog (14 days)
+// Detects HTTP-level attacks invisible to DeviceLogonEvents and SecurityEvent
+W3CIISLog
+| where TimeGenerated > ago(14d)
+| where scStatus in (401, 403)
+// Exclude internal/monitoring traffic
+| where cIP !startswith "10."
+| where cIP !startswith "192.168."
+| where cIP !startswith "172.16." and cIP !startswith "172.17." and cIP !startswith "172.18." and cIP !startswith "172.19."
+| where cIP !startswith "172.20." and cIP !startswith "172.21." and cIP !startswith "172.22." and cIP !startswith "172.23."
+| where cIP !startswith "172.24." and cIP !startswith "172.25." and cIP !startswith "172.26." and cIP !startswith "172.27."
+| where cIP !startswith "172.28." and cIP !startswith "172.29." and cIP !startswith "172.30." and cIP !startswith "172.31."
+| where cIP !startswith "127."
+| summarize
+    FailedRequests = count(),
+    Status401 = countif(scStatus == 401),
+    Status403 = countif(scStatus == 403),
+    TargetPaths = make_set(csUriStem, 10),
+    Methods = make_set(csMethod, 5),
+    UserAgents = make_set(csUserAgent, 3),
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated)
+    by cIP, Computer
+| where FailedRequests >= 3
+| extend Duration = LastSeen - FirstSeen
+| extend AttackType = case(
+    Status401 > 10, "HTTP Brute Force",
+    TargetPaths has_any ("eval-stdin", "phpunit", ".env", "wp-login", "wp-admin"), "Web Exploitation",
+    TargetPaths has_any ("actuator", "console", "manager", "admin"), "Admin Panel Recon",
+    Status403 > Status401, "Access Probing",
+    "General Scanning")
+| project cIP, Computer, FailedRequests, Status401, Status403, AttackType,
+    TargetPaths, UserAgents, FirstSeen, LastSeen, Duration
+| order by FailedRequests desc
+| take 30
+```
+
+**Expected Results:**
+- **cIP**: Attacking IP address
+- **Computer**: Target IIS server
+- **FailedRequests**: Total 401/403 responses (HTTP authentication failures + forbidden)
+- **AttackType**: Categorized attack vector:
+  - `HTTP Brute Force`: >10 consecutive 401s — credential stuffing against IIS auth
+  - `Web Exploitation`: Known exploit paths (phpunit eval-stdin, .env file exposure, WordPress)
+  - `Admin Panel Recon`: Probing for management consoles (Tomcat, Spring Actuator)
+  - `Access Probing`: Mostly 403 Forbidden — testing directory permissions
+  - `General Scanning`: Low-volume recon
+- **TargetPaths**: URI stems targeted — reveals attack intent
+- **UserAgents**: Scanner identification
+
+**Common Web Exploitation Payloads:**
+
+| Path | Attack | MITRE |
+|------|--------|-------|
+| `/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php` | CVE-2017-9841 — Remote code execution via PHPUnit | T1190 |
+| `/.env` | Environment file exposure (credentials, API keys) | T1552.001 |
+| `/wp-login.php`, `/wp-admin/` | WordPress admin brute force | T1110 |
+| `/actuator/health`, `/actuator/env` | Spring Boot Actuator information leak | T1190 |
+| `/hello.world` | Scanner fingerprinting probe | T1595.002 |
+
+**Cross-Layer Correlation:**
+
+After identifying IIS attacker IPs, check if the same IPs also appear at the auth layer:
+
+```kql
+// Cross-reference IIS attackers in SecurityEvent
+let IISAttackers = W3CIISLog
+    | where TimeGenerated > ago(14d)
+    | where scStatus in (401, 403)
+    | where cIP !startswith "10." and cIP !startswith "192.168." and cIP !startswith "127."
+    | summarize FailedHTTP = count() by cIP
+    | where FailedHTTP >= 3
+    | project cIP;
+// Did they also try Windows auth?
+SecurityEvent
+| where TimeGenerated > ago(14d)
+| where EventID == 4625
+| where IpAddress in (IISAttackers) or IpAddress != "-"
+| summarize AuthFailures = count() by IpAddress, Computer
+| join kind=inner (IISAttackers) on $left.IpAddress == $right.cIP
+| project IpAddress, Computer, AuthFailures
+```
 
 ---
 
@@ -174,30 +370,9 @@ DeviceNetworkEvents
   - **1433/3306**: Database attacks (MSSQL/MySQL)
   - **8080/8443**: Alternative web ports
 
-**Interpreting Results:**
+> **⚠️ Critical limitation:** This query filters to `ConnectionFailed`, `InboundConnectionBlocked`, and `ConnectionAttempt` — but **RDP brute force attacks will NOT appear here**. When an attacker connects to port 3389, the TCP handshake succeeds (appearing as `InboundConnectionAccepted` in Query 2B), and authentication fails at the auth layer (SecurityEvent 4625). The `ConnectionFailed` events in DeviceNetworkEvents are typically outbound failures or internal monitoring noise (e.g., `monitoringhost.exe`), not inbound attack traffic. `InboundConnectionBlocked` may not exist in all environments (0 events observed in testing). This query is most useful for detecting **port scanning** where the TCP connection itself is rejected/blocked, not for brute force detection.
 
-✅ **Few/No Results = Good News:**
-- Your perimeter security (Azure NSG, firewall) is blocking attacks before they reach devices
-- Defender for Endpoint only sees what reaches the device network layer
-- Most attacks should be blocked upstream
-
-⚠️ **Many Results = Investigation Needed:**
-- External IPs successfully reaching your devices
-- May indicate misconfigured firewall rules
-- Could be legitimate traffic from CDNs, update services, or partners
-- **Always enrich IPs** to determine legitimacy
-
-**Example Output (from test environment):**
-```
-RemoteIP: 151.101.22.172 (Fastly CDN - legitimate)
-InboundAttempts: 21
-TargetedPorts: [54207, 52445, 53555...] (high ephemeral ports)
-TargetedDevices: 6
-Duration: 12 days
-Assessment: Legitimate CDN traffic, not an attack
-```
-
-**Note:** This query may return very few results in well-protected environments. The real external threats often appear in Query 1 (authentication layer) after passing network security.
+**Note:** `DeviceNetworkEvents` only logs what reaches the device network stack. If perimeter controls (NSG, firewall, JIT) block traffic upstream, it won't appear here. Cross-reference with Query 1B (SecurityEvent 4625) for authentication-layer attacks and Query 2B for successful inbound connections.
 
 > **⚠️ FourToSixMapping note:** This query uses RFC1918 exclusion filters (not `RemoteIPType == "Public"`), which correctly catches all non-private IPs regardless of MDE's dual-stack classification. However, if adapting this query to use `RemoteIPType` filtering instead, be aware that IIS and other dual-stack listeners cause MDE to classify inbound IPv4 connections as `FourToSixMapping` rather than `Public`. Always include both: `RemoteIPType in ("Public", "FourToSixMapping")`. See `queries/network/internet_exposure_analysis.md` for full details.
 
@@ -262,59 +437,13 @@ DeviceNetworkEvents
 - **FirstSeen / LastSeen**: Time window of attacker activity
 - **Duration**: How long attacker maintained access/probing
 
-**Real Honeypot Results (Jan 8-9, 2026):**
-```
-RemoteIP: 185.156.73.74
-TotalAttempts: 1
-TargetPorts: [3389]
-FirstSeen: 2026-01-08T23:48:45
-LastSeen: 2026-01-08T23:48:45
-Status: Malicious (31% abuse, 17 reports) - RDP brute force infrastructure
-
-RemoteIP: 185.243.96.116
-TotalAttempts: 1  
-TargetPorts: [3389]
-FirstSeen: 2026-01-08T23:47:52
-LastSeen: 2026-01-08T23:47:52
-Status: CRITICAL (100% abuse, 2625 reports) - Active global port scanner
-
-RemoteIP: 206.168.34.199
-TotalAttempts: 1
-TargetPorts: [3389]
-FirstSeen: 2026-01-09T01:24:04
-LastSeen: 2026-01-09T01:24:04
-Status: Censys scanner (100% abuse, 1181 reports) - Legitimate security research
-```
-
-**Interpreting Results:**
-
-🔴 **Highly Malicious IPs (Immediate Block):**
-- **185.243.96.116**: 100% abuse, 2625 reports, active global threat actor
-- **64.62.156.132**: 100% abuse, 3880 reports, targets honeypots worldwide
-- **206.168.34.212**: 100% abuse, 1353 reports, aggressive port scanning
-
-🟡 **Known Attack Infrastructure (Monitor/Block):**
-- **185.156.73.74/169**: 27-31% abuse, RDP brute force campaign
-- **185.243.96.63**: 22% abuse, password spray attacks
-- **106.75.15.181**: 42% abuse, VoIP/port scanning from China
-
-⚪ **Legitimate Security Scanners (Allowlist Consideration):**
-- **167.94.138.184**: Censys Inc. (0% abuse, 2507 reports, whitelisted)
-- **206.168.34.199/212**: Censys Inc. (100% abuse score is FALSE POSITIVE - legitimate security research)
-- **205.210.31.222**: Google Cloud (0% abuse but 5436 reports - likely compromised instance)
-
-**Key Insight:** Censys scanners appear malicious due to aggressive global scanning but are legitimate security researchers. Check AbuseIPDB "whitelisted" field to distinguish from real threats.
-
 **Next Steps:**
-1. **Correlate with Query 1**: Did these IPs attempt authentication after connecting?
-   ```kql
-   DeviceLogonEvents
-   | where RemoteIP in ("185.156.73.74", "185.243.96.116", "206.168.34.199")
-   | where ActionType in ("LogonFailed", "LogonSuccess")
-   ```
-2. **Enrich IPs**: Use `python enrich_ips.py <IP1> <IP2> <IP3>` to get abuse scores
-3. **Block malicious IPs**: Update NSG/firewall rules (but allow Censys for security posture visibility)
+1. **Correlate with Query 1/1B**: Did these IPs also attempt authentication?
+2. **Enrich IPs**: Use `python enrich_ips.py <IP1> <IP2> ...` to get abuse scores, geolocation, VPN/proxy detection
+3. **Block confirmed malicious IPs**: Update NSG/firewall rules
 4. **Check for successful logins**: Review authentication logs for these IPs
+
+**Tip:** Some IPs with high AbuseIPDB scores may be legitimate security scanners (e.g., Censys, Shodan). Check the `whitelisted` field in AbuseIPDB to distinguish.
 
 ---
 
@@ -366,103 +495,6 @@ Any results from this query indicate **CONFIRMED COMPROMISE** - external attacke
 
 ---
 
-## Query 2 (Original): External Inbound Attack Attempts (Port Scanning/Network Attacks)
-
-**Purpose:** Detect external attackers attempting inbound connections to your devices - port scanning, brute force connection attempts, or blocked attacks from the internet.
-
-**Key Features:**
-- Filters to **external IPs only** (excludes RFC1918 private ranges, localhost, Azure infrastructure)
-- Focuses on **FAILED/BLOCKED** inbound attempts (InboundConnectionBlocked, ConnectionFailed)
-- Detects port scanning patterns and blocked attacks
-- Minimum 10 attempts to reduce noise
-
-**Thresholds:**
-- Minimum 10 inbound attempts from single external IP
-- Excludes internal network traffic (10.x, 192.168.x, 172.16-31.x)
-- Excludes Azure metadata services (168.63.129.16, 169.254.169.254)
-
-<!-- cd-metadata
-cd_ready: false
-adaptation_notes: "Duplicate of Query 2 above (original version). Same aggregation and entity mapping limitations apply."
--->
-```kql
-// Query 2: External Inbound Attack Attempts (14 days)
-// Detects external attackers attempting to connect to your devices (port scanning, brute force, blocked attacks)
-DeviceNetworkEvents
-| where TimeGenerated > ago(14d)
-| where ActionType in ("InboundConnectionBlocked", "ConnectionFailed", "ConnectionAttempt")
-// Filter to only EXTERNAL IPs (exclude private RFC1918 ranges, localhost, Azure metadata)
-| where RemoteIP !startswith "10."
-| where RemoteIP !startswith "192.168."
-| where RemoteIP !startswith "172.16." and RemoteIP !startswith "172.17." and RemoteIP !startswith "172.18." and RemoteIP !startswith "172.19." 
-| where RemoteIP !startswith "172.20." and RemoteIP !startswith "172.21." and RemoteIP !startswith "172.22." and RemoteIP !startswith "172.23."
-| where RemoteIP !startswith "172.24." and RemoteIP !startswith "172.25." and RemoteIP !startswith "172.26." and RemoteIP !startswith "172.27."
-| where RemoteIP !startswith "172.28." and RemoteIP !startswith "172.29." and RemoteIP !startswith "172.30." and RemoteIP !startswith "172.31."
-| where RemoteIP !startswith "127."
-| where RemoteIP != "168.63.129.16"  // Azure metadata service
-| where RemoteIP != "169.254.169.254"  // Azure IMDS
-| where RemoteIP !has ":"  // Exclude IPv6 for now (mostly internal/link-local)
-// Focus on inbound attempts where remote is initiating TO our LocalPort
-| where isnotempty(LocalPort)
-| summarize 
-    InboundAttempts = count(),
-    TargetedPorts = make_set(LocalPort, 15),
-    TargetedDevices = dcount(DeviceName),
-    Devices = make_set(DeviceName, 5),
-    FirstSeen = min(TimeGenerated),
-    LastSeen = max(TimeGenerated)
-    by RemoteIP
-| where InboundAttempts >= 10
-| extend Duration = LastSeen - FirstSeen
-| project RemoteIP, InboundAttempts, TargetedPorts, TargetedDevices, Devices, FirstSeen, LastSeen, Duration
-| order by InboundAttempts desc
-| take 20
-```
-
-**Expected Results:**
-- **RemoteIP**: External attacking IP address
-- **InboundAttempts**: Number of inbound connection attempts from this IP
-- **TargetedPorts**: Which ports on your devices the attacker tried to reach
-- **TargetedDevices**: Number of your devices this IP attempted to connect to
-- **Devices**: Sample of device names targeted
-- **FirstSeen / LastSeen**: Time window of attack activity
-- **Duration**: How long the attack campaign lasted
-
-**Indicators of Attack:**
-- High `InboundAttempts` (50+) = aggressive port scanning
-- High `TargetedDevices` (5+) = network-wide scanning
-- Multiple high ports = port sweep looking for open services
-- Common attack ports in `TargetedPorts`:
-  - **22**: SSH brute force
-  - **23**: Telnet exploitation
-  - **80/443**: Web service attacks
-  - **445/139**: SMB/NetBIOS exploitation
-  - **3389**: RDP brute force
-  - **445**: SMB (file sharing/lateral movement)
-  - **135/139**: Windows RPC/NetBIOS
-  - **80/443**: Web service attacks
-- LocalIP = **127.0.0.1**: Internal service failures (not attacks)
-- External IPs + SMB ports (445/139) = potential ransomware/lateral movement attempts
-
-**Why Query 2 May Return Few Results:**
-
-In well-protected Azure environments, you may see minimal external inbound attack attempts because:
-1. **Azure NSG (Network Security Groups)** blocks attacks at the perimeter
-2. **Azure Firewall** filters malicious traffic before reaching VMs
-3. **Just-in-Time VM Access** restricts RDP/SSH to approved IPs only
-4. **Application Gateway / Front Door** handles web traffic protection
-
-**DeviceNetworkEvents only logs what reaches the device network stack**. If your NSG blocks port 22 SSH scans, Defender won't see them at all.
-
-**This is a GOOD thing** - defense in depth working correctly!
-
-**Where the real threats appear:**
-- **Query 1** (authentication layer) - Catches attacks that pass network security but fail at login
-- **Query 7** (IP analysis) - Identifies attacking IPs attempting authentication
-- **Firewall logs** (CommonSecurityLog) - Shows blocked traffic at perimeter
-
----
-
 ## Query 3: Combined View - Devices with BOTH Issues
 
 **Purpose:** Find devices experiencing both authentication failures AND network connection problems - likely indicators of active targeting or compromise.
@@ -504,6 +536,8 @@ DeviceLogonEvents
 - Typical attack pattern: Port scan → Service enumeration → Authentication attempts
 - Recommend: Review firewall logs, check for successful logins from same IPs, inspect device for malware
 
+> **⚠️ False Positive Warning:** The `NetworkFailures` count from `DeviceNetworkEvents` may include **internal monitoring noise** (e.g., `monitoringhost.exe` connecting to localhost, Azure monitoring agents, etc.) rather than external attacks. In testing, alpine-srv1 showed 32 "network failures" — all were internal `::1` / `127.0.0.1` connections from monitoring processes, not external attackers. The `LogonFailures` count from `DeviceLogonEvents` is also heavily under-sampled (see Query 1 Coverage Note). For accurate attack volume, cross-reference with **SecurityEvent** (Query 1B) for authentication data and **Query 2B** for external inbound connections.
+
 ---
 
 ## Query 4: Aggregated Failed Login Report (Honeypot View)
@@ -511,6 +545,8 @@ DeviceLogonEvents
 **Purpose:** Use Defender's aggregated reporting feature to detect repeated sign-in failures with reduced log volume.
 
 **Note:** Aggregated events condense multiple similar events into a single record with metadata about occurrence count.
+
+> **⚠️ Availability:** The `LogonFailedAggregatedReport` ActionType is **not present on all devices**. In testing, alpine-srv1 (which had 409 `LogonFailed` events) produced **0** aggregated report events. This feature depends on MDE agent version, device configuration, and the volume/pattern of failures. If this query returns 0 results, fall back to Query 1 (individual events) or Query 1B (SecurityEvent) for failed logon detection.
 
 ```kql
 // Query 4: Aggregated Failed Login Report (14 days)
@@ -674,8 +710,7 @@ DeviceLogonEvents
 **Integration with workspace tools:**
 Use the `enrich_ips.py` utility in this workspace to automate IP enrichment:
 ```powershell
-# Enrich specific IPs
-python enrich_ips.py 185.156.73.74 185.243.96.63 185.156.73.169
+python enrich_ips.py <IP1> <IP2> <IP3>
 ```
 
 ---
