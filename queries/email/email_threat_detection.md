@@ -609,6 +609,8 @@ UrlClickEvents
 | order by TimeGenerated desc
 ```
 
+**⚠️ Investigation pitfall:** This query only finds clicks where Safe Links **independently** tagged the URL as malicious (`ThreatTypes` populated). Safe Links and EmailEvents use **different detection engines** — an email flagged as phishing by EmailEvents may contain URLs that Safe Links allows without tagging. For drill-down investigations following delivered phishing, use **Q7.6** instead (joins delivered phishing NetworkMessageIds with all clicks).
+
 ### 7.5 URL Click Summary by User
 
 Identify users with the most Safe Links click activity — potential risky click behavior.
@@ -630,6 +632,32 @@ UrlClickEvents
     by AccountUpn
 | order by TotalClicks desc
 ```
+
+### 7.6 Clicks on URLs from Delivered Phishing Emails (Investigation Query)
+
+Joins delivered phishing emails with URL click activity — catches ALL clicks on URLs from known-phishing emails, regardless of whether Safe Links tagged the URL as malicious at click time. **Use this query (not Q7.4) when investigating delivered phishing from EmailEvents.**
+
+<!-- cd-metadata
+cd_ready: false
+adaptation_notes: "Investigation-only join query. Requires delivered phishing emails as input. Not suitable for CD — use Q7.4 for standalone detection. This query answers 'did anyone click URLs in emails we know are phishing?' vs Q7.4 which answers 'did Safe Links flag any clicked URLs as malicious?'"
+-->
+```kql
+let DeliveredPhish = EmailEvents
+| where TimeGenerated > ago(30d)
+| where ThreatTypes has "Phish"
+| where DeliveryAction == "Delivered"
+| project NetworkMessageId, RecipientEmailAddress, SenderFromAddress, Subject;
+UrlClickEvents
+| where TimeGenerated > ago(30d)
+| join kind=inner DeliveredPhish on NetworkMessageId
+| project TimeGenerated, AccountUpn, RecipientEmailAddress,
+    SenderFromAddress, Subject, Url, UrlChain,
+    ActionType, IsClickedThrough, ThreatTypes,
+    IPAddress, Workload, NetworkMessageId
+| order by TimeGenerated desc
+```
+
+**Why this query exists:** Safe Links and EmailEvents use different detection engines. EmailEvents may flag an email as phishing (via heuristics, sender reputation, content analysis) while Safe Links allows the URL through if it doesn't match their real-time URL threat DB at click time. Q7.4 (`isnotempty(ThreatTypes)` on UrlClickEvents) returns 0 results in this scenario — a dangerous false negative during investigations. This query eliminates the gap by starting from known-phishing `NetworkMessageId`s.
 
 ---
 
