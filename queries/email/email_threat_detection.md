@@ -14,6 +14,67 @@
 
 This collection of KQL queries covers email-based threat detection across the Microsoft Defender for Office 365 (MDO) tables available in Sentinel Data Lake. These tables power investigations for phishing campaigns, AiTM attacks, BEC fraud, malware delivery, and email exfiltration.
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| **1. Mail Flow** | | | |
+| 1.1 | Inbound email summary with threat breakdown | Dashboard / posture | `EmailEvents` |
+| 1.2 | Email volume trend by day and direction | Trend analysis | `EmailEvents` |
+| 1.3 | Top sender domains by volume | Baseline / anomaly | `EmailEvents` |
+| **2. Phishing** | | | |
+| 2.1 | Phishing emails — detailed view | Investigation | `EmailEvents` |
+| 2.2 | Top phishing sender domains | Triage | `EmailEvents` |
+| 2.3 | Most targeted recipients | Triage | `EmailEvents` |
+| 2.4 | **Delivered phishing (not blocked)** | **Investigation — start here for delivered phishing** | `EmailEvents` |
+| 2.5 | First-contact phishing attempts | Detection | `EmailEvents` |
+| **3. AiTM & Post-Compromise** | | | |
+| 3.1 | AiTM proxy sign-in detection (OfficeHome) | Detection | `SigninLogs` |
+| 3.2 | AiTM full chain: phishing → token → inbox rule | Detection | Multi-table |
+| 3.3 | Inbox rules created after phishing delivery | Investigation | `OfficeActivity` |
+| **4. Authentication** | | | |
+| 4.1 | DMARC/DKIM/SPF failures | Posture | `EmailEvents` |
+| 4.2 | Auth failure summary by domain | Posture | `EmailEvents` |
+| 4.3 | Envelope-From vs Header-From mismatch | Spoofing detection | `EmailEvents` |
+| **5. Detection Methods** | | | |
+| 5.1 | Detection methods breakdown | Posture | `EmailEvents` |
+| 5.2 | Overridden threats (allow policy bypass) | Gap analysis | `EmailEvents` |
+| 5.3 | Third-party detection integration | Posture | `EmailEvents` |
+| **6. ZAP (Post-Delivery)** | | | |
+| 6.1 | ZAP actions summary | Posture | `EmailPostDeliveryEvents` |
+| 6.2 | Failed ZAP actions (threats still in mailbox) | Investigation | `EmailPostDeliveryEvents` |
+| 6.3 | User activity after failed ZAP | Investigation | Multi-table |
+| **7. URL Analysis & Clicks** | | | |
+| 7.1 | URLs in inbound emails — domain summary | Triage | `EmailUrlInfo` |
+| 7.2 | Suspicious URL patterns (long/encoded) | Detection | `EmailUrlInfo` |
+| 7.3 | Safe Links clicks — all activity | Dashboard | `UrlClickEvents` |
+| 7.4 | Clicks allowed on malicious URLs (Safe Links tagged) | Detection — **misses URLs not tagged by Safe Links; use 7.6 for investigations** | `UrlClickEvents` |
+| 7.5 | URL click summary by user | Behavioral | `UrlClickEvents` |
+| 7.6 | **Clicks on URLs from delivered phishing** | **Investigation — joins phishing NMIDs with clicks; no Safe Links dependency** | `UrlClickEvents` + `EmailEvents` |
+| **8. Attachments** | | | |
+| 8.1 | Attachment summary by file type | Posture | `EmailAttachmentInfo` |
+| 8.2 | Malicious attachments detected | Detection | `EmailAttachmentInfo` |
+| 8.3 | Attachment hash lookup vs threat intel | Investigation | `EmailAttachmentInfo` + `TI` |
+| 8.4 | Attachments on devices (lateral spread) | Investigation | `EmailAttachmentInfo` + `DeviceFileEvents` |
+| **9. Outbound & Forwarding** | | | |
+| 9.1 | Outbound emails from compromised accounts | Investigation | `EmailEvents` |
+| 9.2 | External forwarding via EmailEvents | Detection | `EmailEvents` |
+| 9.3 | Forwarding rules via OfficeActivity | Investigation | `OfficeActivity` |
+| **10. MDO Efficacy** | | | |
+| 10.1 | Detection efficacy (pre vs post-delivery) | Posture | Multi-table |
+| 10.2 | Delivery action breakdown | Dashboard | `EmailEvents` |
+| 10.3 | Latest delivery location (post-ZAP state) | Investigation | `EmailEvents` |
+| **11. Cross-Table Correlation** | | | |
+| 11.1 | Phishing → device logon correlation | Investigation | `EmailEvents` + `DeviceLogonEvents` |
+| 11.2 | Malicious email → PowerShell execution | Investigation | `EmailEvents` + `DeviceProcessEvents` |
+| 11.3 | Email → URL click → sign-in timeline | Investigation | 3-table join |
+| **12. Targeted Investigation** | | | |
+| 12.1 | All emails for a specific user | Investigation | `EmailEvents` |
+| 12.2 | Trace email by NetworkMessageId | Investigation | `EmailEvents` |
+| 12.3 | Emails from a suspicious sender | Investigation | `EmailEvents` |
+
+**Investigation shortcuts:** For delivered phishing drill-downs, start with **2.4** (recipients) + **7.6** (URL clicks) + **3.3** (inbox rules). For ZAP failures, use **6.2** → **6.3**. For AiTM chains, use **3.2**.
+
 **Tables Reference:**
 
 | Table | Purpose | Key Join Column |

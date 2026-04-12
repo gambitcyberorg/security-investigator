@@ -21,6 +21,29 @@ This document synthesizes intelligence from [Jeffrey Appel's 2026 AiTM guide](ht
 3. **KQL hunting queries** for both Sentinel Data Lake and Defender XDR Advanced Hunting
 4. **Response playbook** for confirmed AiTM compromise
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| **Part 3 — Detection Queries** | | | |
+| Q1 | AiTM proxy sign-in — OfficeHome multi-country session | Detection | `EntraIdSignInEvents` (AH) |
+| Q2 | AiTM proxy sign-in — Sentinel Data Lake variant | Detection | `SigninLogs` (DL) |
+| Q3 | Anomalous token risk events correlated with phishing | Investigation | `AADUserRiskEvents` + `EmailEvents` |
+| Q4 | New MFA method registration after suspicious sign-in | Detection | `AuditLogs` + `SigninLogs` |
+| Q5 | Inbox rules created during anomalous token sessions | Investigation | `CloudAppEvents` (AH) |
+| Q6 | Suspicious inbox rules for forwarding/redirect | Investigation | `OfficeActivity` (DL) |
+| Q7 | **Token replay — same SessionId from multiple IPs/countries** | **Investigation — primary token theft indicator** | `SigninLogs` |
+| Q8 | URL click-through to phishing sites | Investigation | `UrlClickEvents` |
+| Q9 | Network protection — AiTM site connection attempts | Detection | `DeviceEvents` |
+| Q10 | PIM elevation without re-auth after AiTM | Investigation | `AuditLogs` + `SigninLogs` |
+| Q11 | SmartScreen AiTM phishing blocks | Detection | `DeviceEvents` |
+| Q12 | Comprehensive AiTM alert summary — incident correlation | Investigation | `SecurityAlert` + `SecurityIncident` |
+| Q13 | Post-AiTM cloud app reconnaissance | Investigation | `CloudAppEvents` |
+
+**Investigation shortcuts:** For suspected AiTM compromise, start with **Q7** (token replay) + **Q3** (risk events) + **Q5** (inbox rules). For AiTM posture assessment, see **Part 2** (defensive program). For response actions, see **Part 5** (response playbook).
+
+**Non-query sections:** Part 1 (Attack Anatomy), Part 2 (Defensive Program — Tiers 1-3), Part 4 (Built-In Alerts), Part 5 (Response Playbook), Part 6 (Maturity Model), References.
+
 ---
 
 ## Part 1: AiTM Attack Anatomy

@@ -4,7 +4,7 @@
 # Slim version: title, path, domains, mitre, prompt only.
 # Use --full flag to generate the verbose manifest with tables, keywords, platform, timeframe.
 
-generated: '2026-04-12T05:05:50Z'
+generated: '2026-04-12T20:55:02Z'
 valid_domains:
 - admin
 - cloud
@@ -416,7 +416,7 @@ queries:
   - T1072
   - T1036.005
 - title: AiTM / Adversary-in-the-Middle — Defensive Program & Hunting Playbook
-  path: queries/identity/aitm_defense_program.md
+  path: queries/identity/aitm_threat_detection.md
   domains:
   - identity
   - email

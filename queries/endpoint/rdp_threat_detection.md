@@ -14,6 +14,28 @@
 
 This file covers **two RDP threat scenarios** with queries for both `SecurityEvent` and `DeviceLogonEvents`:
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Table | Source Filter |
+|---|-------|----------|-------|---------------|
+| **Part A — Internal Lateral Movement** | | | | |
+| Q1 | Successful RDP authentications (baseline) | Baseline | `SecurityEvent` | RFC 1918 only |
+| Q2 | **Failed attempts before success (primary detection)** | **Investigation — start here for lateral movement** | `SecurityEvent` | RFC 1918 only |
+| Q3 | RDP activity summary with failure rates | Triage | `SecurityEvent` | RFC 1918 only |
+| Q4 | RDP spray — one source, many targets | Detection | `SecurityEvent` | RFC 1918 only |
+| Q5 | Failed RDP attempts by failure reason | Investigation | `SecurityEvent` | RFC 1918 only |
+| Q6 | RDP timeline — visualize attack progression | Investigation | `SecurityEvent` | RFC 1918 only |
+| **Part B — External Brute-Force (SecurityEvent)** | | | | |
+| Q7 | External RDP brute-force summary | Detection | `SecurityEvent` | Non-RFC 1918 |
+| Q8 | External RDP successful access | Detection (high-severity) | `SecurityEvent` | Non-RFC 1918 |
+| Q9 | **External failed-then-success correlation** | **Investigation — highest-fidelity external breach detection** | `SecurityEvent` | Non-RFC 1918 |
+| **Part C — External (MDE / DeviceLogonEvents)** | | | | |
+| Q10 | External RDP brute-force (MDE) | Detection | `DeviceLogonEvents` | Non-RFC 1918 |
+| Q11 | Successful external RDP access (MDE) | Detection (high-severity) | `DeviceLogonEvents` | Non-RFC 1918 |
+| Q12 | External failed-then-success correlation (MDE) | Investigation | `DeviceLogonEvents` | Non-RFC 1918 |
+
+**Investigation shortcuts:** For internet-facing devices, start with **Q7/Q10** (brute-force summary) + **Q9/Q12** (breach correlation). For internal lateral movement, start with **Q2** (failed-then-success). Part B vs Part C: use Part B if SecurityEvent connector is configured, fall back to Part C (DeviceLogonEvents) if not.
+
 | Scenario | Section | Queries | Source Filter |
 |----------|---------|---------|---------------|
 | **Internal Lateral Movement** | [Part A](#part-a-internal-lateral-movement-securityevent) | Q1–Q6 | RFC 1918 IPs only |
