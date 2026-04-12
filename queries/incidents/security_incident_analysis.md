@@ -29,6 +29,22 @@ The `SecurityIncident` table aggregates correlated alerts into incidents for inv
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [Open High-Severity Incidents — Newest First with Entity & Tag Enric...](#query-1-open-high-severity-incidents--newest-first-with-entity--tag-enrichment) | Investigation | `SecurityAlert` + `SecurityIncident` |
+| 2 | [Incident Classification Trends — 30-Day Rolling](#query-2-incident-classification-trends--30-day-rolling) | Dashboard | `SecurityIncident` |
+| 3 | [Unassigned Incident Backlog](#query-3-unassigned-incident-backlog) | Investigation | `SecurityIncident` |
+| 4 | [MITRE ATT&CK Tactic Distribution Across Open Incidents](#query-4-mitre-attck-tactic-distribution-across-open-incidents) | Investigation | `SecurityAlert` + `SecurityIncident` |
+| 5 | [Entity Hotspot — Most Targeted Accounts and Devices](#query-5-entity-hotspot--most-targeted-accounts-and-devices) | Triage | `SecurityAlert` + `SecurityIncident` |
+| 6 | [Incident Tag Analysis — AutoAssigned vs User Tags](#query-6-incident-tag-analysis--autoassigned-vs-user-tags) | Investigation | `SecurityIncident` |
+| 7 | [Alert-to-Incident Correlation Depth](#query-7-alert-to-incident-correlation-depth) | Detection | `SecurityIncident` |
+| 8 | [Incident Product Source Breakdown](#query-8-incident-product-source-breakdown) | Dashboard | `SecurityIncident` |
+| 9 | [Incident Velocity — New Incidents per Day](#query-9-incident-velocity--new-incidents-per-day) | Investigation | `SecurityIncident` |
+| 10 | [Mean Time to Close (MTTC) by Severity](#query-10-mean-time-to-close-mttc-by-severity) | Investigation | `SecurityIncident` |
+
+
 ## Query 1: Open High-Severity Incidents — Newest First with Entity & Tag Enrichment
 
 **Purpose:** Top 10 newest open High/Critical incidents sorted by day then alert count. Extracts account/device entities from alerts and incident tags for cross-query correlation. The definitive "what needs attention now" query.

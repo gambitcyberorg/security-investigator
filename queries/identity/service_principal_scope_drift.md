@@ -39,6 +39,21 @@ Where each dimension contributes a deviation percentage and the final score is t
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [Composite Drift Score — Full Detection (PRIMARY)](#query-1-composite-drift-score--full-detection-primary) | Posture | `AADServicePrincipalSignInLogs` + `DriftScore` |
+| 2 | [New Resource Access — Resource Expansion Detail](#query-2-new-resource-access--resource-expansion-detail) | Investigation | `AADServicePrincipalSignInLogs` |
+| 3 | [IP and Location Drift — Geographic Anomaly Detection](#query-3-ip-and-location-drift--geographic-anomaly-detection) | Detection | `AADServicePrincipalSignInLogs` |
+| 4 | [Permission & Credential Escalation — AuditLogs Correlation](#query-4-permission--credential-escalation--auditlogs-correlation) | Investigation | `AuditLogs` |
+| 5 | [Network Behavior Drift — DeviceNetworkEvents Correlation](#query-5-network-behavior-drift--devicenetworkevents-correlation) | Investigation | `DeviceNetworkEvents` |
+| 6 | [Security Alert Correlation — Alerts Involving Drifting Principals](#query-6-security-alert-correlation--alerts-involving-drifting-principals) | Detection | `AADServicePrincipalSignInLogs` + multi |
+| 7 | [Drift Timeline — Weekly Trend per Principal](#query-7-drift-timeline--weekly-trend-per-principal) | Dashboard | `AADServicePrincipalSignInLogs` |
+| 8 | [Cross-Table Unified Drift Dashboard](#query-8-cross-table-unified-drift-dashboard) | Dashboard | `AADServicePrincipalSignInLogs` + multi |
+| 9 | [Managed Identity Drift — AADManagedIdentitySignInLogs](#query-9-managed-identity-drift--aadmanagedidentitysigninlogs) | Investigation | `AADManagedIdentitySignInLogs` |
+
+
 ## Query 1: Composite Drift Score — Full Detection (PRIMARY)
 
 **Purpose:** Single query that builds the 90-day baseline, compares with last 7 days across all sign-in dimensions, and computes a Drift Score per service principal. Flags entities exceeding the threshold.

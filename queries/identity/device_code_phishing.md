@@ -63,6 +63,25 @@ This campaign represents a significant escalation from the [Storm-2372 device co
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [ErrorCode 50199 Followed by Success (Device Code Auth Pause)](#query-1-errorcode-50199-followed-by-success-device-code-auth-pause) | Investigation | `EntraIdSignInEvents` |
+| 2 | [Device Code Flow via EndpointCall (Cmsi:cmsi Indicator)](#query-2-device-code-flow-via-endpointcall-cmsicmsi-indicator) | Investigation | `EntraIdSignInEvents` |
+| 3 | [Device Code Auth Summary per User (Hunting)](#query-3-device-code-auth-summary-per-user-hunting) | Dashboard | `EntraIdSignInEvents` |
+| 4 | [Sign-Ins from EvilToken/Campaign IOC IP Ranges](#query-4-sign-ins-from-eviltokencampaign-ioc-ip-ranges) | Investigation | `EntraIdSignInEvents` |
+| 4 | [b: IOC IP Ranges — Data Lake 90-Day Lookback](#query-4b-ioc-ip-ranges--data-lake-90-day-lookback) | Investigation | `AADNonInteractiveUserSignInLogs` + `SigninLogs` |
+| 5 | [URL Clicks to Serverless Redirect Infrastructure](#query-5-url-clicks-to-serverless-redirect-infrastructure) | Investigation | `UrlClickEvents` |
+| 6 | [URL Click Correlated with Risky Sign-In (Full Kill Chain)](#query-6-url-click-correlated-with-risky-sign-in-full-kill-chain) | Investigation | `EntraIdSignInEvents` + `UrlClickEvents` |
+| 7 | [Suspicious Device Registration (PRT Persistence)](#query-7-suspicious-device-registration-prt-persistence) | Investigation | `CloudAppEvents` |
+| 8 | [Malicious Inbox Rules with Special-Character Names](#query-8-malicious-inbox-rules-with-special-character-names) | Detection | `CloudAppEvents` |
+| 9 | [All Inbox Rule Modifications with Suspicious Properties (Broader Hunt)](#query-9-all-inbox-rule-modifications-with-suspicious-properties-broader-hunt) | Detection | `CloudAppEvents` |
+| 10 | [Email Exfiltration — MailItemsAccessed from Uncommon ISP](#query-10-email-exfiltration--mailitemsaccessed-from-uncommon-isp) | Investigation | `CloudAppEvents` |
+| 11 | [Anomalous Graph API Mail Access Volume (Nobelium-Pattern Exfiltration)](#query-11-anomalous-graph-api-mail-access-volume-nobelium-pattern-exfiltration) | Dashboard | `CloudAppEvents` |
+| 12 | [Device Code Auth → Post-Compromise Activity Chain](#query-12-device-code-auth--post-compromise-activity-chain) | Investigation | `CloudAppEvents` + `EntraIdSignInEvents` |
+
+
 ## Phase 1-4 Detection: Device Code Authentication
 
 ### Query 1: ErrorCode 50199 Followed by Success (Device Code Auth Pause)

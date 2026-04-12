@@ -21,30 +21,26 @@ This document synthesizes intelligence from [Jeffrey Appel's 2026 AiTM guide](ht
 3. **KQL hunting queries** for both Sentinel Data Lake and Defender XDR Advanced Hunting
 4. **Response playbook** for confirmed AiTM compromise
 
+---
+
 ## Quick Reference — Query Index
 
 | # | Query | Use Case | Key Table |
 |---|-------|----------|-----------|
-| **Part 3 — Detection Queries** | | | |
-| Q1 | AiTM proxy sign-in — OfficeHome multi-country session | Detection | `EntraIdSignInEvents` (AH) |
-| Q2 | AiTM proxy sign-in — Sentinel Data Lake variant | Detection | `SigninLogs` (DL) |
-| Q3 | Anomalous token risk events correlated with phishing | Investigation | `AADUserRiskEvents` + `EmailEvents` |
-| Q4 | New MFA method registration after suspicious sign-in | Detection | `AuditLogs` + `SigninLogs` |
-| Q5 | Inbox rules created during anomalous token sessions | Investigation | `CloudAppEvents` (AH) |
-| Q6 | Suspicious inbox rules for forwarding/redirect | Investigation | `OfficeActivity` (DL) |
-| Q7 | **Token replay — same SessionId from multiple IPs/countries** | **Investigation — primary token theft indicator** | `SigninLogs` |
-| Q8 | URL click-through to phishing sites | Investigation | `UrlClickEvents` |
-| Q9 | Network protection — AiTM site connection attempts | Detection | `DeviceEvents` |
-| Q10 | PIM elevation without re-auth after AiTM | Investigation | `AuditLogs` + `SigninLogs` |
-| Q11 | SmartScreen AiTM phishing blocks | Detection | `DeviceEvents` |
-| Q12 | Comprehensive AiTM alert summary — incident correlation | Investigation | `SecurityAlert` + `SecurityIncident` |
-| Q13 | Post-AiTM cloud app reconnaissance | Investigation | `CloudAppEvents` |
+| 1 | [AiTM Proxy Sign-In — OfficeHome Multi-Country Session (Advanced Hun...](#query-1-aitm-proxy-sign-in--officehome-multi-country-session-advanced-hunting) | Investigation | `EntraIdSignInEvents` |
+| 2 | [AiTM Proxy Sign-In — Sentinel Data Lake Variant](#query-2-aitm-proxy-sign-in--sentinel-data-lake-variant) | Investigation | `SigninLogs` |
+| 3 | [Anomalous Token Risk Events Correlated with Phishing Emails](#query-3-anomalous-token-risk-events-correlated-with-phishing-emails) | Detection | `AADUserRiskEvents` + `EmailEvents` |
+| 4 | [New MFA Method Registration After Suspicious Sign-In](#query-4-new-mfa-method-registration-after-suspicious-sign-in) | Investigation | `AADUserRiskEvents` + `AuditLogs` |
+| 5 | [Inbox Rules Created During Anomalous Token Sessions (Advanced Hunting)](#query-5-inbox-rules-created-during-anomalous-token-sessions-advanced-hunting) | Detection | `AlertInfo` + `CloudAppEvents` |
+| 6 | [Suspicious Inbox Rules for Forwarding/Redirect (Sentinel Data Lake)](#query-6-suspicious-inbox-rules-for-forwardingredirect-sentinel-data-lake) | Detection | `OfficeActivity` |
+| 7 | [Token Replay — Same SessionId from Multiple IPs/Countries](#query-7-token-replay--same-sessionid-from-multiple-ipscountries) | Investigation | `SigninLogs` |
+| 8 | [URL Click-Through to Phishing Sites](#query-8-url-click-through-to-phishing-sites) | Investigation | `UrlClickEvents` |
+| 9 | [Network Protection Events — AiTM Site Connection Attempts](#query-9-network-protection-events--aitm-site-connection-attempts) | Investigation | `DeviceEvents` |
+| 10 | [PIM Elevation Without Re-Authentication After AiTM](#query-10-pim-elevation-without-re-authentication-after-aitm) | Investigation | `AADUserRiskEvents` + `AuditLogs` |
+| 11 | [SmartScreen AiTM Phishing Blocks](#query-11-smartscreen-aitm-phishing-blocks) | Investigation | `DeviceEvents` |
+| 12 | [Comprehensive AiTM Alert Summary — Incident Correlation](#query-12-comprehensive-aitm-alert-summary--incident-correlation) | Dashboard | `SecurityAlert` + `SecurityIncident` |
+| 13 | [Post-AiTM Cloud App Reconnaissance](#query-13-post-aitm-cloud-app-reconnaissance) | Investigation | `AlertInfo` + `CloudAppEvents` |
 
-**Investigation shortcuts:** For suspected AiTM compromise, start with **Q7** (token replay) + **Q3** (risk events) + **Q5** (inbox rules). For AiTM posture assessment, see **Part 2** (defensive program). For response actions, see **Part 5** (response playbook).
-
-**Non-query sections:** Part 1 (Attack Anatomy), Part 2 (Defensive Program — Tiers 1-3), Part 4 (Built-In Alerts), Part 5 (Response Playbook), Part 6 (Maturity Model), References.
-
----
 
 ## Part 1: AiTM Attack Anatomy
 

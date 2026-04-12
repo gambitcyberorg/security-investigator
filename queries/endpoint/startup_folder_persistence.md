@@ -57,6 +57,21 @@ In this environment, Startup folder writes are very sparse (only 2 events in 90d
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [— Startup Folder Baseline: What Normally Writes Here (DeviceFileEve...](#query-1--startup-folder-baseline-what-normally-writes-here-devicefileevents) | Dashboard | `DeviceFileEvents` |
+| 2 | [— Startup Folder Outlier Detection (DeviceFileEvents)](#query-2--startup-folder-outlier-detection-devicefileevents) | Detection | `DeviceFileEvents` |
+| 3 | [— Masquerading Detection: Legitimate Names, Wrong Metadata (DeviceF...](#query-3--masquerading-detection-legitimate-names-wrong-metadata-devicefileevents--deviceprocessevents) | Detection | `DeviceFileEvents` |
+| 4 | [— Suspicious File Types in Startup Folder (DeviceFileEvents)](#query-4--suspicious-file-types-in-startup-folder-devicefileevents) | Investigation | — |
+| 5 | [— Process Lineage: What Wrote to Startup? (DeviceFileEvents)](#query-5--process-lineage-what-wrote-to-startup-devicefileevents) | Investigation | `DeviceFileEvents` |
+| 6 | [— Execution FROM the Startup Folder (DeviceProcessEvents)](#query-6--execution-from-the-startup-folder-deviceprocessevents) | Investigation | `DeviceProcessEvents` |
+| 7 | [— All-Users (Machine-Level) Startup Folder Monitoring (DeviceFileEv...](#query-7--all-users-machine-level-startup-folder-monitoring-devicefileevents) | Investigation | `DeviceFileEvents` |
+| 8 | [— Registry Run Key Baseline (DeviceRegistryEvents)](#query-8--registry-run-key-baseline-deviceregistryevents) | Dashboard | `DeviceRegistryEvents` |
+| 9 | [— Registry Run Key Outlier Detection (DeviceRegistryEvents)](#query-9--registry-run-key-outlier-detection-deviceregistryevents) | Detection | `DeviceRegistryEvents` |
+
+
 ## Query Catalog
 
 ### Query 1 — Startup Folder Baseline: What Normally Writes Here (DeviceFileEvents)

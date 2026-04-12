@@ -32,6 +32,26 @@
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [Axios User-Agent in Sign-In Logs (Advanced Hunting)](#query-1-axios-user-agent-in-sign-in-logs-advanced-hunting) | Investigation | `EntraIdSignInEvents` |
+| 1 | [b: Sentinel Data Lake Variant (>30d lookback)](#query-1b-sentinel-data-lake-variant-30d-lookback) | Investigation | `AADNonInteractiveUserSignInLogs` + `SigninLogs` |
+| 2 | [50199 Error Preceding Successful Authentication (Advanced Hunting)](#query-2-50199-error-preceding-successful-authentication-advanced-hunting) | Investigation | `EntraIdSignInEvents` |
+| 2 | [b: Time-Relaxed Variant (no RequestId join)](#query-2b-time-relaxed-variant-no-requestid-join) | Investigation | `EntraIdSignInEvents` |
+| 3 | [Non-Interactive OfficeHome Token Replay at ~30min Cadence (Advanced...](#query-3-non-interactive-officehome-token-replay-at-30min-cadence-advanced-hunting) | Investigation | `EntraIdSignInEvents` |
+| 4 | [Payroll-Keyword Inbox Rules — Defense Evasion (Sentinel Data Lake)](#query-4-payroll-keyword-inbox-rules--defense-evasion-sentinel-data-lake) | Detection | `OfficeActivity` |
+| 5 | [Payroll-Keyword Inbox Rules — CloudAppEvents (Advanced Hunting)](#query-5-payroll-keyword-inbox-rules--cloudappevents-advanced-hunting) | Detection | `CloudAppEvents` |
+| 6 | [Workday Payment Election Changes (Advanced Hunting)](#query-6-workday-payment-election-changes-advanced-hunting) | Investigation | `CloudAppEvents` |
+| 7 | [Workday Inbox Rules — Evidence Hiding (Advanced Hunting)](#query-7-workday-inbox-rules--evidence-hiding-advanced-hunting) | Detection | `CloudAppEvents` |
+| 8 | [Social Engineering Email — Direct Deposit Subject (Advanced Hunting)](#query-8-social-engineering-email--direct-deposit-subject-advanced-hunting) | Investigation | `EmailEvents` |
+| 9 | [IOC Domain — bluegraintours[.]com Network Activity (Sentinel Data L...](#query-9-ioc-domain--bluegraintourscom-network-activity-sentinel-data-lake-via-asim) | Investigation | — |
+| 10 | [IOC Domain — bluegraintours[.]com Web Sessions (Sentinel Data Lake ...](#query-10-ioc-domain--bluegraintourscom-web-sessions-sentinel-data-lake-via-asim) | Investigation | — |
+| 11 | [Off-Hours Token Renewal (~5 AM Local Time) (Advanced Hunting)](#query-11-off-hours-token-renewal-5-am-local-time-advanced-hunting) | Investigation | `EntraIdSignInEvents` |
+| 12 | [Full Chain Correlation — AiTM → Inbox Rule → Payroll Change (Advanc...](#query-12-full-chain-correlation--aitm--inbox-rule--payroll-change-advanced-hunting) | Detection | `CloudAppEvents` + `EntraIdSignInEvents` |
+
+
 ## Query 1: Axios User-Agent in Sign-In Logs (Advanced Hunting)
 
 Detect sign-ins using the Axios HTTP client user-agent — the primary tool fingerprint for Storm-2755 token replay. `EntraIdSignInEvents` covers both interactive and non-interactive sign-ins in a single AH-native table.

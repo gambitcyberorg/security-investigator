@@ -25,6 +25,22 @@ This query collection helps security analysts understand the types of events, ac
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [Top 20 Action Types by Frequency](#query-1-top-20-action-types-by-frequency) | Triage | `CloudAppEvents` |
+| 2 | [Application Distribution](#query-2-application-distribution) | Investigation | `CloudAppEvents` |
+| 3 | [Activity Types Breakdown](#query-3-activity-types-breakdown) | Dashboard | `CloudAppEvents` |
+| 4 | [Admin Operations Analysis](#query-4-admin-operations-analysis) | Investigation | `CloudAppEvents` |
+| 5 | [External User Activity](#query-5-external-user-activity) | Investigation | `CloudAppEvents` |
+| 6 | [Events by Object Type](#query-6-events-by-object-type) | Investigation | `CloudAppEvents` |
+| 7 | [Geographic Distribution & Anonymous Proxy Detection](#query-7-geographic-distribution--anonymous-proxy-detection) | Detection | `AnonymousProxyEvents` + multi |
+| 8 | [Daily Event Trend](#query-8-daily-event-trend) | Dashboard | `CloudAppEvents` |
+| 9 | [Impersonation Events](#query-9-impersonation-events) | Investigation | `CloudAppEvents` |
+| 10 | [Sample Event Details](#query-10-sample-event-details) | Investigation | `CloudAppEvents` |
+
+
 ## Query 1: Top 20 Action Types by Frequency
 
 **Purpose:** Discover the most common actions occurring in your cloud applications to establish baseline activity patterns.

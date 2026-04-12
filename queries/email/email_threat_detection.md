@@ -14,80 +14,55 @@
 
 This collection of KQL queries covers email-based threat detection across the Microsoft Defender for Office 365 (MDO) tables available in Sentinel Data Lake. These tables power investigations for phishing campaigns, AiTM attacks, BEC fraud, malware delivery, and email exfiltration.
 
+---
+
 ## Quick Reference — Query Index
 
 | # | Query | Use Case | Key Table |
 |---|-------|----------|-----------|
-| **1. Mail Flow** | | | |
-| 1.1 | Inbound email summary with threat breakdown | Dashboard / posture | `EmailEvents` |
-| 1.2 | Email volume trend by day and direction | Trend analysis | `EmailEvents` |
-| 1.3 | Top sender domains by volume | Baseline / anomaly | `EmailEvents` |
-| **2. Phishing** | | | |
-| 2.1 | Phishing emails — detailed view | Investigation | `EmailEvents` |
-| 2.2 | Top phishing sender domains | Triage | `EmailEvents` |
-| 2.3 | Most targeted recipients | Triage | `EmailEvents` |
-| 2.4 | **Delivered phishing (not blocked)** | **Investigation — start here for delivered phishing** | `EmailEvents` |
-| 2.5 | First-contact phishing attempts | Detection | `EmailEvents` |
-| **3. AiTM & Post-Compromise** | | | |
-| 3.1 | AiTM proxy sign-in detection (OfficeHome) | Detection | `SigninLogs` |
-| 3.2 | AiTM full chain: phishing → token → inbox rule | Detection | Multi-table |
-| 3.3 | Inbox rules created after phishing delivery | Investigation | `OfficeActivity` |
-| **4. Authentication** | | | |
-| 4.1 | DMARC/DKIM/SPF failures | Posture | `EmailEvents` |
-| 4.2 | Auth failure summary by domain | Posture | `EmailEvents` |
-| 4.3 | Envelope-From vs Header-From mismatch | Spoofing detection | `EmailEvents` |
-| **5. Detection Methods** | | | |
-| 5.1 | Detection methods breakdown | Posture | `EmailEvents` |
-| 5.2 | Overridden threats (allow policy bypass) | Gap analysis | `EmailEvents` |
-| 5.3 | Third-party detection integration | Posture | `EmailEvents` |
-| **6. ZAP (Post-Delivery)** | | | |
-| 6.1 | ZAP actions summary | Posture | `EmailPostDeliveryEvents` |
-| 6.2 | Failed ZAP actions (threats still in mailbox) | Investigation | `EmailPostDeliveryEvents` |
-| 6.3 | User activity after failed ZAP | Investigation | Multi-table |
-| **7. URL Analysis & Clicks** | | | |
-| 7.1 | URLs in inbound emails — domain summary | Triage | `EmailUrlInfo` |
-| 7.2 | Suspicious URL patterns (long/encoded) | Detection | `EmailUrlInfo` |
-| 7.3 | Safe Links clicks — all activity | Dashboard | `UrlClickEvents` |
-| 7.4 | Clicks allowed on malicious URLs (Safe Links tagged) | Detection — **misses URLs not tagged by Safe Links; use 7.6 for investigations** | `UrlClickEvents` |
-| 7.5 | URL click summary by user | Behavioral | `UrlClickEvents` |
-| 7.6 | **Clicks on URLs from delivered phishing** | **Investigation — joins phishing NMIDs with clicks; no Safe Links dependency** | `UrlClickEvents` + `EmailEvents` |
-| **8. Attachments** | | | |
-| 8.1 | Attachment summary by file type | Posture | `EmailAttachmentInfo` |
-| 8.2 | Malicious attachments detected | Detection | `EmailAttachmentInfo` |
-| 8.3 | Attachment hash lookup vs threat intel | Investigation | `EmailAttachmentInfo` + `TI` |
-| 8.4 | Attachments on devices (lateral spread) | Investigation | `EmailAttachmentInfo` + `DeviceFileEvents` |
-| **9. Outbound & Forwarding** | | | |
-| 9.1 | Outbound emails from compromised accounts | Investigation | `EmailEvents` |
-| 9.2 | External forwarding via EmailEvents | Detection | `EmailEvents` |
-| 9.3 | Forwarding rules via OfficeActivity | Investigation | `OfficeActivity` |
-| **10. MDO Efficacy** | | | |
-| 10.1 | Detection efficacy (pre vs post-delivery) | Posture | Multi-table |
-| 10.2 | Delivery action breakdown | Dashboard | `EmailEvents` |
-| 10.3 | Latest delivery location (post-ZAP state) | Investigation | `EmailEvents` |
-| **11. Cross-Table Correlation** | | | |
-| 11.1 | Phishing → device logon correlation | Investigation | `EmailEvents` + `DeviceLogonEvents` |
-| 11.2 | Malicious email → PowerShell execution | Investigation | `EmailEvents` + `DeviceProcessEvents` |
-| 11.3 | Email → URL click → sign-in timeline | Investigation | 3-table join |
-| **12. Targeted Investigation** | | | |
-| 12.1 | All emails for a specific user | Investigation | `EmailEvents` |
-| 12.2 | Trace email by NetworkMessageId | Investigation | `EmailEvents` |
-| 12.3 | Emails from a suspicious sender | Investigation | `EmailEvents` |
+| 1.1 | [Inbound Email Summary with Threat Breakdown](#11-inbound-email-summary-with-threat-breakdown) | Dashboard | `EmailEvents` |
+| 1.2 | [Email Volume Trend by Day and Direction](#12-email-volume-trend-by-day-and-direction) | Dashboard | `EmailEvents` |
+| 1.3 | [Top Sender Domains by Volume](#13-top-sender-domains-by-volume) | Dashboard | `EmailEvents` |
+| 2.1 | [Phishing Emails — Detailed View](#21-phishing-emails--detailed-view) | Investigation | `EmailEvents` |
+| 2.2 | [Top Phishing Sender Domains](#22-top-phishing-sender-domains) | Triage | `EmailEvents` |
+| 2.3 | [Most Targeted Recipients for Phishing](#23-most-targeted-recipients-for-phishing) | Triage | `EmailEvents` |
+| 2.4 | [Phishing Emails That Were Delivered (Not Blocked)](#24-phishing-emails-that-were-delivered-not-blocked) | Investigation | `EmailEvents` |
+| 2.5 | [First-Contact Phishing Attempts](#25-first-contact-phishing-attempts) | Investigation | `EmailEvents` |
+| 3.1 | [AiTM Proxy Sign-In Detection (OfficeHome App)](#31-aitm-proxy-sign-in-detection-officehome-app) | Detection | `SigninLogs` |
+| 3.2 | [AiTM Full Chain: Phishing Email → Anomalous Token → Inbox Rule](#32-aitm-full-chain-phishing-email--anomalous-token--inbox-rule) | Detection | `AADUserRiskEvents` + `EmailEvents` |
+| 3.3 | [Inbox Rules Created After Phishing Email Delivery](#33-inbox-rules-created-after-phishing-email-delivery) | Detection | `EmailEvents` + `OfficeActivity` |
+| 4.1 | [Email Authentication Failures (DMARC/DKIM/SPF)](#41-email-authentication-failures-dmarcdkimspf) | Investigation | `EmailEvents` |
+| 4.2 | [Authentication Failure Summary by Domain](#42-authentication-failure-summary-by-domain) | Dashboard | `EmailEvents` |
+| 4.3 | [Envelope-From vs Header-From Mismatch (Display Name Spoofing)](#43-envelope-from-vs-header-from-mismatch-display-name-spoofing) | Investigation | `EmailEvents` |
+| 5.1 | [Detection Methods Breakdown](#51-detection-methods-breakdown) | Dashboard | `EmailEvents` |
+| 5.2 | [Overridden Threats (Allow Policies Bypassing Detection)](#52-overridden-threats-allow-policies-bypassing-detection) | Detection | `EmailEvents` |
+| 5.3 | [Third-Party Detection Integration](#53-third-party-detection-integration) | Detection | `EmailEvents` |
+| 6.1 | [ZAP Actions Summary](#61-zap-actions-summary) | Dashboard | `EmailPostDeliveryEvents` |
+| 6.2 | [Failed ZAP Actions (Threats Still in Mailbox)](#62-failed-zap-actions-threats-still-in-mailbox) | Investigation | `EmailEvents` + `EmailPostDeliveryEvents` |
+| 6.3 | [User Activity After Failed ZAP (Compromise Check)](#63-user-activity-after-failed-zap-compromise-check) | Investigation | `EmailPostDeliveryEvents` + `SigninLogs` |
+| 7.1 | [URLs in Inbound Emails — Domain Summary](#71-urls-in-inbound-emails--domain-summary) | Dashboard | `EmailEvents` + `EmailUrlInfo` |
+| 7.2 | [Suspicious URL Patterns (Long URLs, Encoded Params)](#72-suspicious-url-patterns-long-urls-encoded-params) | Investigation | `EmailEvents` + `EmailUrlInfo` |
+| 7.3 | [Safe Links Clicks — All Activity](#73-safe-links-clicks--all-activity) | Investigation | `UrlClickEvents` |
+| 7.4 | [Clicks Allowed on Malicious URLs (User Exposed to Threat)](#74-clicks-allowed-on-malicious-urls-user-exposed-to-threat) | Investigation | `UrlClickEvents` |
+| 7.5 | [URL Click Summary by User](#75-url-click-summary-by-user) | Dashboard | `UrlClickEvents` |
+| 7.6 | [Clicks on URLs from Delivered Phishing Emails (Investigation Query)](#76-clicks-on-urls-from-delivered-phishing-emails-investigation-query) | Investigation | `EmailEvents` + `UrlClickEvents` |
+| 8.1 | [Attachment Summary by File Type](#81-attachment-summary-by-file-type) | Dashboard | `EmailAttachmentInfo` |
+| 8.2 | [Malicious Attachments Detected](#82-malicious-attachments-detected) | Detection | `EmailAttachmentInfo` + `EmailEvents` |
+| 8.3 | [Attachment Hash Lookup Against Threat Intelligence](#83-attachment-hash-lookup-against-threat-intelligence) | Investigation | `EmailAttachmentInfo` |
+| 8.4 | [Attachments on Devices (Lateral Spread Check)](#84-attachments-on-devices-lateral-spread-check) | Investigation | `DeviceFileEvents` + `EmailAttachmentInfo` |
+| 9.1 | [Outbound Emails from Compromised Accounts](#91-outbound-emails-from-compromised-accounts) | Investigation | `EmailEvents` |
+| 9.2 | [External Forwarding Detection via Email Events](#92-external-forwarding-detection-via-email-events) | Detection | `EmailEvents` |
+| 9.3 | [Email Forwarding Rules via OfficeActivity (Comprehensive)](#93-email-forwarding-rules-via-officeactivity-comprehensive) | Detection | `OfficeActivity` |
+| 10.1 | [MDO Detection Efficacy (Pre vs Post-Delivery)](#101-mdo-detection-efficacy-pre-vs-post-delivery) | Dashboard | `EmailEvents` + `EmailPostDeliveryEvents` |
+| 10.2 | [Delivery Action Breakdown](#102-delivery-action-breakdown) | Dashboard | `EmailEvents` |
+| 10.3 | [Latest Delivery Location (Post-ZAP State)](#103-latest-delivery-location-post-zap-state) | Investigation | `EmailEvents` |
+| 11.1 | [Phishing Email → Device Logon Correlation](#111-phishing-email--device-logon-correlation) | Investigation | `DeviceLogonEvents` + `EmailEvents` |
+| 11.2 | [Malicious Email → PowerShell Execution Correlation](#112-malicious-email--powershell-execution-correlation) | Investigation | `DeviceProcessEvents` + `EmailEvents` |
+| 11.3 | [Email with URL → URL Click → Sign-in Timeline](#113-email-with-url--url-click--sign-in-timeline) | Investigation | `EmailEvents` + multi |
+| 12.1 | [All Emails for a Specific User](#121-all-emails-for-a-specific-user) | Investigation | `EmailEvents` |
+| 12.2 | [Trace a Specific Email by NetworkMessageId](#122-trace-a-specific-email-by-networkmessageid) | Investigation | `EmailAttachmentInfo` + multi |
+| 12.3 | [Emails from a Suspicious Sender](#123-emails-from-a-suspicious-sender) | Investigation | `EmailEvents` |
 
-**Investigation shortcuts:** For delivered phishing drill-downs, start with **2.4** (recipients) + **7.6** (URL clicks) + **3.3** (inbox rules). For ZAP failures, use **6.2** → **6.3**. For AiTM chains, use **3.2**.
-
-**Tables Reference:**
-
-| Table | Purpose | Key Join Column |
-|-------|---------|-----------------|
-| `EmailEvents` | Core email metadata — sender, recipient, direction, threats, delivery action | `NetworkMessageId` |
-| `EmailPostDeliveryEvents` | Post-delivery actions — ZAP (zero-hour auto purge), manual remediation | `NetworkMessageId` |
-| `EmailUrlInfo` | URLs embedded in emails | `NetworkMessageId` |
-| `EmailAttachmentInfo` | File attachments in emails | `NetworkMessageId` |
-| `UrlClickEvents` | Safe Links click tracking — who clicked, was it blocked or allowed | `NetworkMessageId`, `Url` |
-
-> **⚠️ Data Lake vs Advanced Hunting:** These tables exist in the Sentinel Data Lake when the Defender XDR connector is enabled. Use `TimeGenerated` (not `Timestamp`) as the datetime column in Data Lake queries. If a table is missing, retry with `RunAdvancedHuntingQuery` using `Timestamp`.
-
----
 
 ## 1. Mail Flow Overview
 

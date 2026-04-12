@@ -42,6 +42,18 @@ This collection of KQL queries monitors credential lifecycle events for Entra ID
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [All Credential Changes — Full Detail (PRIMARY AUDIT)](#query-1-all-credential-changes--full-detail-primary-audit) | Investigation | `AuditLogs` |
+| 2 | [Human vs Automated Credential Changes (Summary)](#query-2-human-vs-automated-credential-changes-summary) | Dashboard | `AuditLogs` |
+| 3 | [New Application Registrations with Full Context](#query-3-new-application-registrations-with-full-context) | Investigation | `AuditLogs` |
+| 4 | [Application Ownership Changes](#query-4-application-ownership-changes) | Investigation | `AuditLogs` |
+| 5 | [Consent Grants & Permission Changes](#query-5-consent-grants--permission-changes) | Investigation | `AuditLogs` |
+| 6 | [All ApplicationManagement Activity — Operation Breakdown](#query-6-all-applicationmanagement-activity--operation-breakdown) | Dashboard | `AuditLogs` |
+
+
 ## Query 1: All Credential Changes — Full Detail (PRIMARY AUDIT)
 
 **Purpose:** Complete inventory of every secret/certificate add, update, or removal across all applications and service principals.

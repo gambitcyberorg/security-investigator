@@ -44,6 +44,36 @@ This hunting campaign targets TTPs documented in the Microsoft Defender Security
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [Renamed Python Binary Masquerading as svchost.exe (Process Activity)](#query-1-renamed-python-binary-masquerading-as-svchostexe-process-activity) | Investigation | `DeviceProcessEvents` |
+| 2 | [Renamed Python Binary Masquerading as svchost.exe (Network Connecti...](#query-2-renamed-python-binary-masquerading-as-svchostexe-network-connections) | Investigation | `DeviceNetworkEvents` |
+| 3 | [Broad Process Masquerading Detection — FileName vs OriginalFileName...](#query-3-broad-process-masquerading-detection--filename-vs-originalfilename-mismatch) | Detection | `DeviceProcessEvents` |
+| 4 | [svchost.exe Running Outside System32 (Location Anomaly)](#query-4-svchostexe-running-outside-system32-location-anomaly) | Detection | `DeviceProcessEvents` |
+| 5 | [Process Injection — cvtres.exe Spawned by Fake svchost.exe](#query-5-process-injection--cvtresexe-spawned-by-fake-svchostexe) | Investigation | `DeviceProcessEvents` |
+| 6 | [DLL Sideloading — Unexpected DLL Loads by Renamed Processes](#query-6-dll-sideloading--unexpected-dll-loads-by-renamed-processes) | Investigation | `DeviceEvents` |
+| 7 | [certutil.exe Decoding Payloads](#query-7-certutilexe-decoding-payloads) | Investigation | `DeviceProcessEvents` |
+| 8 | [Renamed AutoIt Binary Executing Scripts](#query-8-renamed-autoit-binary-executing-scripts) | Investigation | `DeviceProcessEvents` |
+| 9 | [Obfuscated Python Script Execution](#query-9-obfuscated-python-script-execution) | Investigation | `DeviceProcessEvents` |
+| 10 | [Registry Run Key Persistence](#query-10-registry-run-key-persistence) | Investigation | `DeviceRegistryEvents` |
+| 11 | [Scheduled Task Persistence (CrystalPDF & PXA Stealer Pattern)](#query-11-scheduled-task-persistence-crystalpdf--pxa-stealer-pattern) | Detection | `DeviceEvents` |
+| 12 | [Encoded PowerShell Downloading Payloads](#query-12-encoded-powershell-downloading-payloads) | Investigation | `DeviceProcessEvents` |
+| 13 | [VBS/Batch Dropper Chain (Eternidade Stealer Pattern)](#query-13-vbsbatch-dropper-chain-eternidade-stealer-pattern) | Investigation | `DeviceFileEvents` |
+| 14 | [Malicious PDF File Extraction (PXA Stealer Campaign 2)](#query-14-malicious-pdf-file-extraction-pxa-stealer-campaign-2) | Investigation | `DeviceProcessEvents` |
+| 15 | [Sensitive Data Staging and ZIP Archiving](#query-15-sensitive-data-staging-and-zip-archiving) | Investigation | `DeviceFileEvents` |
+| 16 | [Browser Credential Store Access](#query-16-browser-credential-store-access) | Investigation | `DeviceFileEvents` |
+| 17 | [CrystalPDF C2 Network Connections](#query-17-crystalpdf-c2-network-connections) | Investigation | `DeviceNetworkEvents` |
+| 18 | [System Discovery via WMI or Python](#query-18-system-discovery-via-wmi-or-python) | Investigation | `DeviceProcessEvents` |
+| 19 | [Suspicious Path/Directory Deletion (Evidence Cleanup)](#query-19-suspicious-pathdirectory-deletion-evidence-cleanup) | Investigation | `DeviceFileEvents` |
+| 20 | [Known C2 Infrastructure (IP Addresses)](#query-20-known-c2-infrastructure-ip-addresses) | Investigation | `DeviceNetworkEvents` |
+| 21 | [Known C2 Domains](#query-21-known-c2-domains) | Investigation | `DeviceNetworkEvents` |
+| 22 | [Known Malicious File Hashes](#query-22-known-malicious-file-hashes) | Investigation | `DeviceProcessEvents` |
+| 23 | [Phishing Emails with Infostealer Payloads](#query-23-phishing-emails-with-infostealer-payloads) | Investigation | `EmailAttachmentInfo` + `EmailEvents` |
+| 24 | [Multi-TTP Infostealer Scoring — Devices with Multiple Warning Signs](#query-24-multi-ttp-infostealer-scoring--devices-with-multiple-warning-signs) | Investigation | `DeviceProcessEvents` + `DeviceRegistryEvents` |
+
+
 ## 🔴 HIGH-PRIORITY QUERIES — Svchost Masquerading & Python Abuse
 
 ### Query 1: Renamed Python Binary Masquerading as svchost.exe (Process Activity)

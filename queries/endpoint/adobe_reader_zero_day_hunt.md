@@ -30,6 +30,26 @@ A separate but related vulnerability where PDF `/Launch` actions trigger outboun
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [Known C2 IP Address Connections (IOC Match)](#query-1-known-c2-ip-address-connections-ioc-match) | Investigation | `DeviceNetworkEvents` |
+| 2 | [Known Malicious PDF File Hashes (IOC Match)](#query-2-known-malicious-pdf-file-hashes-ioc-match) | Investigation | `DeviceFileEvents` |
+| 3 | [Adobe Reader Outbound Connections to Non-Standard Ports (Behavioral)](#query-3-adobe-reader-outbound-connections-to-non-standard-ports-behavioral) | Investigation | `DeviceNetworkEvents` |
+| 4 | [Adobe Reader Connections to Non-Adobe Infrastructure (Behavioral)](#query-4-adobe-reader-connections-to-non-adobe-infrastructure-behavioral) | Investigation | `DeviceNetworkEvents` |
+| 5 | [Adobe Reader Direct-IP Connections (No DNS — Behavioral)](#query-5-adobe-reader-direct-ip-connections-no-dns--behavioral) | Investigation | `DeviceNetworkEvents` |
+| 6 | [PDF Reader NTLM Leak via SMB (Port 445)](#query-6-pdf-reader-ntlm-leak-via-smb-port-445) | Investigation | `DeviceNetworkEvents` |
+| 7 | [Adobe Reader Spawning Suspicious Child Processes (Post-RCE)](#query-7-adobe-reader-spawning-suspicious-child-processes-post-rce) | Investigation | `DeviceProcessEvents` |
+| 8 | [PDF File Delivery via Email then Opened (Kill Chain)](#query-8-pdf-file-delivery-via-email-then-opened-kill-chain) | Investigation | `DeviceFileEvents` + `EmailAttachmentInfo` |
+| 9 | [PDF Open Followed by Outbound Network Connection (Behavioral Correl...](#query-9-pdf-open-followed-by-outbound-network-connection-behavioral-correlation) | Investigation | `DeviceFileEvents` + `DeviceNetworkEvents` |
+| 10 | [Adobe Synchronizer User-Agent in Network Traffic](#query-10-adobe-synchronizer-user-agent-in-network-traffic) | Investigation | `DeviceNetworkEvents` |
+| 11 | [Adobe Reader Network Connection Summary (Baseline Audit)](#query-11-adobe-reader-network-connection-summary-baseline-audit) | Dashboard | `DeviceNetworkEvents` |
+| 12 | [CDC — Adobe Ecosystem File Activity Anomalies](#query-12-cdc--adobe-ecosystem-file-activity-anomalies) | Detection | `CRLogs` + `DeviceCustomFileEvents` |
+| 13 | [CDC — AdobeCollabSync INetCache Downloads (RSS.addFeed Indicator)](#query-13-cdc--adobecollabsync-inetcache-downloads-rssaddfeed-indicator) | Investigation | `DeviceCustomFileEvents` |
+| 14 | [CDC — Full Adobe Ecosystem Temp File Baseline](#query-14-cdc--full-adobe-ecosystem-temp-file-baseline) | Dashboard | `DeviceCustomFileEvents` |
+
+
 ## IOC Reference
 
 | Type | Value | Context |

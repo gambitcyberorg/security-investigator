@@ -28,6 +28,18 @@ This collection contains production-ready KQL queries using the `series_decompos
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [Least Common External IPs (7-Day Analysis)](#query-1-least-common-external-ips-7-day-analysis) | Investigation | `AnomalyScore` + `DeviceNetworkEvents` |
+| 2 | [Device-Specific Anomaly Detection (Honeypot Mode)](#query-2-device-specific-anomaly-detection-honeypot-mode) | Detection | `AnomalyScore` + multi |
+| 3 | [Threshold Sensitivity Analysis](#query-3-threshold-sensitivity-analysis) | Investigation | `DeviceNetworkEvents` |
+| 4 | [Attack Intensity Timeline (15-Minute Bins)](#query-4-attack-intensity-timeline-15-minute-bins) | Investigation | `DeviceNetworkEvents` |
+| 5 | [Score Distribution Analysis (Percentiles)](#query-5-score-distribution-analysis-percentiles) | Posture | `AnomalyScore` + multi |
+| 6 | [Extreme Outlier Detection](#query-6-extreme-outlier-detection) | Detection | `AnomalyScore` + multi |
+
+
 ## Query 1: Least Common External IPs (7-Day Analysis)
 
 **Purpose:** Identify external IP addresses with anomalously low connection counts - potential reconnaissance scans, first-time attackers, or novel threat actors.

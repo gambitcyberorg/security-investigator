@@ -21,6 +21,33 @@ All queries have been tested against live Sentinel data and use proper column na
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [Devices with Multiple Failed Logon Attempts](#query-1-devices-with-multiple-failed-logon-attempts) | Investigation | `DeviceLogonEvents` |
+| 1 | [B: Failed RDP/Auth via SecurityEvent (Layer 2 — Authentication)](#query-1b-failed-rdpauth-via-securityevent-layer-2--authentication) | Investigation | `DeviceLogonEvents` + `SecurityEvent` |
+| 1 | [C: IIS Authentication Failures via W3CIISLog (Layer 3 — Application)](#query-1c-iis-authentication-failures-via-w3ciislog-layer-3--application) | Investigation | `DeviceLogonEvents` + `SecurityEvent` |
+| 2 | [External Inbound Attack Attempts (Port Scanning/Network Attacks)](#query-2-external-inbound-attack-attempts-port-scanningnetwork-attacks) | Investigation | `DeviceNetworkEvents` |
+| 2 | [B: Honeypot Detection - Successful External Inbound Connections](#query-2b-honeypot-detection---successful-external-inbound-connections) | Detection | `DeviceNetworkEvents` |
+| 2 | [C: Investigation - Successful Logins Following Network Connections](#query-2c-investigation---successful-logins-following-network-connections) | Investigation | `DeviceLogonEvents` + `DeviceNetworkEvents` |
+| 3 | [Combined View - Devices with BOTH Issues](#query-3-combined-view---devices-with-both-issues) | Investigation | `DeviceLogonEvents` + `DeviceNetworkEvents` |
+| 4 | [Aggregated Failed Login Report (Honeypot View)](#query-4-aggregated-failed-login-report-honeypot-view) | Investigation | `DeviceLogonEvents` |
+| 5 | [Failed Network Connections by Protocol](#query-5-failed-network-connections-by-protocol) | Investigation | `DeviceNetworkEvents` |
+| 6 | [Timeline View - Failed Attempts Over Time](#query-6-timeline-view---failed-attempts-over-time) | Investigation | `DeviceLogonEvents` + `DeviceNetworkEvents` |
+| 7 | [Geographic Source Analysis (Requires Threat Intelligence)](#query-7-geographic-source-analysis-requires-threat-intelligence) | Investigation | `DeviceLogonEvents` |
+| 8 | [Anomaly Detection - Unusual Failed Login Patterns](#query-8-anomaly-detection---unusual-failed-login-patterns) | Detection | `DeviceLogonEvents` |
+| — | [Adjust Thresholds](#adjust-thresholds) | Investigation | — |
+| — | [Change Time Range](#change-time-range) | Investigation | — |
+| — | [Filter by Specific Devices](#filter-by-specific-devices) | Investigation | — |
+| — | [Add Exclusions for Known Good IPs](#add-exclusions-for-known-good-ips) | Investigation | — |
+| — | [Export to CSV for Analysis](#export-to-csv-for-analysis) | Investigation | — |
+| 1. | [Add Early Filters](#1-add-early-filters) | Investigation | — |
+| 2. | [Use Summarize Early](#2-use-summarize-early) | Investigation | — |
+| 3. | [Limit Result Sets](#3-limit-result-sets) | Investigation | — |
+| 4. | [Use Materialize for Reused Data](#4-use-materialize-for-reused-data) | Investigation | `DeviceLogonEvents` |
+
+
 ## Multi-Layer Attack Detection Model
 
 Internet-facing servers (especially honeypots) are attacked across three distinct layers. Each layer requires a **different table** and provides unique visibility:

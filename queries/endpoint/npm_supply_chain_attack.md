@@ -169,6 +169,43 @@ The attacker compromised the npm maintainer account (`jasonsaayman`) of the wide
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [— npm install / yarn add / pnpm add Command Detection (DeviceProces...](#query-1--npm-install--yarn-add--pnpm-add-command-detection-deviceprocessevents) | Detection | `DeviceProcessEvents` |
+| 2 | [— Compromised axios Version Detection via Process Commands (DeviceP...](#query-2--compromised-axios-version-detection-via-process-commands-deviceprocessevents) | Detection | `DeviceProcessEvents` |
+| 3 | [— plain-crypto-js File Artifacts on Disk (DeviceFileEvents)](#query-3--plain-crypto-js-file-artifacts-on-disk-devicefileevents) | Investigation | `DeviceFileEvents` |
+| 4 | [— plain-crypto-js via CDC File Events (DeviceCustomFileEvents)](#query-4--plain-crypto-js-via-cdc-file-events-devicecustomfileevents) | Investigation | `DeviceCustomFileEvents` + `DeviceFileEvents` |
+| 5 | [— Windows Stage-2 Filesystem IOCs (DeviceFileEvents)](#query-5--windows-stage-2-filesystem-iocs-devicefileevents) | Investigation | `DeviceFileEvents` |
+| 6 | [— Windows Stage-2 CDC Detection (DeviceCustomFileEvents)](#query-6--windows-stage-2-cdc-detection-devicecustomfileevents) | Detection | `DeviceCustomFileEvents` |
+| 7 | [— C2 Network Connections (DeviceNetworkEvents)](#query-7--c2-network-connections-devicenetworkevents) | Investigation | `DeviceNetworkEvents` |
+| 8 | [— C2 DNS Resolution (ASIM DNS)](#query-8--c2-dns-resolution-asim-dns) | Investigation | `ASimDnsActivityLogs` |
+| 9 | [— C2 DNS via MDE DNS Events (DeviceEvents)](#query-9--c2-dns-via-mde-dns-events-deviceevents) | Investigation | `DeviceEvents` |
+| 10 | [— Stage-2 Payload SHA-256 Hash Match (DeviceFileEvents)](#query-10--stage-2-payload-sha-256-hash-match-devicefileevents) | Investigation | `DeviceFileEvents` |
+| 11 | [— Windows Registry Persistence (DeviceRegistryEvents)](#query-11--windows-registry-persistence-deviceregistryevents) | Investigation | `DeviceRegistryEvents` |
+| 12 | [— PowerShell Masquerading as wt.exe (DeviceProcessEvents)](#query-12--powershell-masquerading-as-wtexe-deviceprocessevents) | Investigation | `DeviceProcessEvents` |
+| 13 | [— npm Registry DNS Lookups Baseline (ASIM DNS)](#query-13--npm-registry-dns-lookups-baseline-asim-dns) | Dashboard | `ASimDnsActivityLogs` |
+| 14 | [— npm Registry Network Connections (DeviceNetworkEvents)](#query-14--npm-registry-network-connections-devicenetworkevents) | Investigation | `DeviceNetworkEvents` |
+| 15 | [— npm Install During Compromise Window (DeviceProcessEvents)](#query-15--npm-install-during-compromise-window-deviceprocessevents) | Investigation | `DeviceProcessEvents` |
+| 16 | [— node.exe Spawning Suspicious Network Connections (DeviceNetworkEv...](#query-16--nodeexe-spawning-suspicious-network-connections-devicenetworkevents) | Investigation | `DeviceNetworkEvents` |
+| 17 | [— Anomalous IE8 User-Agent Detection (DeviceNetworkEvents)](#query-17--anomalous-ie8-user-agent-detection-devicenetworkevents) | Detection | `DeviceNetworkEvents` |
+| 18 | [— postinstall Script Execution by node.exe (DeviceProcessEvents)](#query-18--postinstall-script-execution-by-nodeexe-deviceprocessevents) | Investigation | `DeviceProcessEvents` |
+| 19 | [— AMSI Script Content Analysis for npm Payloads (DeviceCustomScript...](#query-19--amsi-script-content-analysis-for-npm-payloads-devicecustomscriptevents) | Investigation | `DeviceCustomScriptEvents` |
+| 20 | [— axios Package in Software Inventory (DeviceTvmSoftwareInventory)](#query-20--axios-package-in-software-inventory-devicetvmsoftwareinventory) | Posture | `DeviceTvmSoftwareInventory` |
+| 21 | [— CDC node_modules File Activity Audit (DeviceCustomFileEvents)](#query-21--cdc-nodemodules-file-activity-audit-devicecustomfileevents) | Investigation | `DeviceCustomFileEvents` |
+| 22 | [— VBScript/cscript Execution from Temp Directory (DeviceProcessEvents)](#query-22--vbscriptcscript-execution-from-temp-directory-deviceprocessevents) | Investigation | `DeviceProcessEvents` |
+| 23 | [— curl Downloads to Temp/ProgramData (DeviceProcessEvents)](#query-23--curl-downloads-to-tempprogramdata-deviceprocessevents) | Investigation | `DeviceProcessEvents` |
+| 24 | [— Linux/macOS Stage-2 File Artifacts (DeviceFileEvents)](#query-24--linuxmacos-stage-2-file-artifacts-devicefileevents) | Investigation | `DeviceFileEvents` |
+| 25 | [— Generic npm postinstall Hook Abuse Detection (DeviceCustomScriptE...](#query-25--generic-npm-postinstall-hook-abuse-detection-devicecustomscriptevents) | Detection | `DeviceCustomScriptEvents` |
+| 26 | [— CDC File Activity for axios Package Directories (DeviceCustomFile...](#query-26--cdc-file-activity-for-axios-package-directories-devicecustomfileevents) | Investigation | `DeviceCustomFileEvents` |
+| 27 | [— Comprehensive npm Ecosystem Exposure Assessment (DeviceProcessEve...](#query-27--comprehensive-npm-ecosystem-exposure-assessment-deviceprocessevents) | Posture | `DeviceProcessEvents` |
+| 28 | [— Cloud Workload postinstall Execution (CloudProcessEvents)](#query-28--cloud-workload-postinstall-execution-cloudprocessevents) | Investigation | `CloudProcessEvents` |
+| 29 | [— ASIM Network Session IoC Detection (_Im_NetworkSession)](#query-29--asim-network-session-ioc-detection-imnetworksession) | Detection | — |
+| 30 | [— ASIM Web Session IoC Detection (_Im_WebSession)](#query-30--asim-web-session-ioc-detection-imwebsession) | Detection | — |
+| 31 | [— Compromised axios/plain-crypto-js in TVM Software Inventory (Devi...](#query-31--compromised-axiosplain-crypto-js-in-tvm-software-inventory-devicetvmsoftwareinventory) | Posture | `DeviceTvmSoftwareInventory` |
+
+
 ## Query Catalog
 
 ### Query 1 — npm install / yarn add / pnpm add Command Detection (DeviceProcessEvents)

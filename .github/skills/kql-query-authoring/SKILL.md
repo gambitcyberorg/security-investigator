@@ -181,11 +181,16 @@ Combine insights: schema for column names, Learn for patterns, community for tec
 | `MITRE:` | ATT&CK technique/tactic IDs for cross-referencing | `build_manifest.py` (slim + full) |
 | `Domains:` | Domain tags for threat-pulse cross-referencing | `build_manifest.py` (slim + full) — **missing = validation error** |
 
-**After creating a new query file:** Run `python .github/manifests/build_manifest.py` to regenerate the discovery manifest. The validator will flag any missing required fields.
+**After creating a new query file:** Run `python .github/manifests/build_manifest.py` to regenerate the discovery manifest, then run `python scripts/generate_tocs.py` to auto-generate the Quick Reference TOC. The validator will flag any missing required fields.
 
 **Subfolder selection:** Place files in the subfolder matching the primary data source: `identity/`, `endpoint/`, `email/`, `network/`, `cloud/`.
 
 Include per-query documentation with Purpose, Thresholds, Expected Results, and Tuning guidance.
+
+**Heading format for TOC compatibility:** The `generate_tocs.py` script auto-generates a Quick Reference TOC by scanning `### ` and `## Query` headings that have a KQL code block within 40 lines. To ensure clean TOC output:
+- **Query headings:** Use `### Query N: <Title>` or `## Query N: <Title>` — the number prefix ensures proper TOC ordering
+- **Non-query sections** (context, deployment, tuning, references): Use heading text that starts with a non-query keyword (e.g., `### Deployment`, `### Tuning`, `### References`). These are automatically filtered out by the TOC generator
+- **Avoid** using `### ` headings for non-query content that contains a KQL code block within 40 lines — the TOC generator uses KQL proximity to detect query headings and will incorrectly include them
 
 ### CD-Aware Output
 

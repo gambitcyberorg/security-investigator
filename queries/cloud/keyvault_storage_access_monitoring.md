@@ -44,6 +44,26 @@ This file covers **three investigation surfaces** for Azure Key Vault and Storag
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [Secret & Key Access Baseline — Per-Caller Per-Vault Summary](#query-1-secret--key-access-baseline--per-caller-per-vault-summary) | Dashboard | `AzureDiagnostics` |
+| 2 | [New Caller Detection — First-Time Access to Vault](#query-2-new-caller-detection--first-time-access-to-vault) | Detection | `AzureDiagnostics` + `ClientInfo` |
+| 3 | [Key Vault Authentication Failures](#query-3-key-vault-authentication-failures) | Investigation | `AzureDiagnostics` |
+| 4 | [Sensitive Key Vault Write Operations](#query-4-sensitive-key-vault-write-operations) | Investigation | `AzureDiagnostics` |
+| 5 | [Key Vault Access Volume Anomaly Detection](#query-5-key-vault-access-volume-anomaly-detection) | Dashboard | `AzureDiagnostics` + `DaysWithActivity` |
+| 6 | [Key Vault Access — Hourly Heat Pattern](#query-6-key-vault-access--hourly-heat-pattern) | Investigation | `AzureDiagnostics` |
+| 7 | [Storage Blob Operations Summary](#query-7-storage-blob-operations-summary) | Dashboard | `StorageBlobLogs` |
+| 8 | [Storage Account Authorization Failures](#query-8-storage-account-authorization-failures) | Investigation | `StorageBlobLogs` |
+| 9 | [Storage SAS Token and Anonymous Access Detection](#query-9-storage-sas-token-and-anonymous-access-detection) | Detection | `StorageBlobLogs` |
+| 10 | [Key Vault Data Plane Access to Critical Vaults (ExposureGraph Join)](#query-10-key-vault-data-plane-access-to-critical-vaults-exposuregraph-join) | Investigation | `AzureDiagnostics` + `ExposureGraphNodes` |
+| 11 | [Identity Permission Sprawl — KV + Storage Access Breadth](#query-11-identity-permission-sprawl--kv--storage-access-breadth) | Investigation | `ExposureGraphEdges` + `ExposureGraphNodes` |
+| 12 | [Key Vault Broad Permission Holders (3+ Vaults)](#query-12-key-vault-broad-permission-holders-3-vaults) | Investigation | `ExposureGraphEdges` + `ExposureGraphNodes` |
+| 13 | [Key Vault Security Recommendations (MDC via ExposureGraph)](#query-13-key-vault-security-recommendations-mdc-via-exposuregraph) | Investigation | `ExposureGraphEdges` + `ExposureGraphNodes` |
+| 14 | [Storage Account Security Recommendations (MDC via ExposureGraph)](#query-14-storage-account-security-recommendations-mdc-via-exposuregraph) | Investigation | `ExposureGraphEdges` + `ExposureGraphNodes` |
+
+
 ## Part A: Key Vault Data Plane Monitoring
 
 ### Query 1: Secret & Key Access Baseline — Per-Caller Per-Vault Summary

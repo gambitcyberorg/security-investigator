@@ -36,6 +36,19 @@ uses app permissions for lateral movement / data exfiltration / privilege escala
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [Risky User → App Operations Chain (HIGHEST SIGNAL)](#query-1-risky-user--app-operations-chain-highest-signal) | Investigation | `AADUserRiskEvents` + multi |
+| 2 | [Credential Add → SPN Activation from New Origin](#query-2-credential-add--spn-activation-from-new-origin) | Investigation | `AADServicePrincipalSignInLogs` + `AuditLogs` |
+| 3 | [Ownership Add → Credential Modification Chain](#query-3-ownership-add--credential-modification-chain) | Investigation | `AuditLogs` |
+| 4 | [SPN Cross-Tenant Sign-Ins](#query-4-spn-cross-tenant-sign-ins) | Investigation | `AADServicePrincipalSignInLogs` |
+| 5 | [Credential Add → SPN Graph API Lateral Movement](#query-5-credential-add--spn-graph-api-lateral-movement) | Investigation | `AuditLogs` + `MicrosoftGraphActivityLogs` |
+| 6 | [Credential Add → Permission Escalation Chain](#query-6-credential-add--permission-escalation-chain) | Investigation | `AuditLogs` |
+| 7 | [Multi-App Ownership Spread](#query-7-multi-app-ownership-spread) | Investigation | `AuditLogs` |
+
+
 ## ⚠️ Schema Pitfalls — Read Before Modifying
 
 | Pitfall | Details |

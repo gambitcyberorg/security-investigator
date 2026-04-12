@@ -29,6 +29,22 @@ Based on [Microsoft Threat Intelligence blog (2026-04-07)](https://www.microsoft
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [DNS Configuration Drift — Baseline vs Recent](#query-1-dns-configuration-drift--baseline-vs-recent) | Dashboard | `DeviceNetworkInfo` |
+| 2 | [Non-Corporate External DNS Resolver Detection](#query-2-non-corporate-external-dns-resolver-detection) | Detection | `DeviceNetworkInfo` |
+| 3 | [DNS Server Change Timeline per Device](#query-3-dns-server-change-timeline-per-device) | Investigation | `DeviceNetworkInfo` |
+| 4 | [Suspicious DNS (Port 53) Traffic to Non-Standard Resolvers](#query-4-suspicious-dns-port-53-traffic-to-non-standard-resolvers) | Investigation | `DeviceNetworkEvents` |
+| 5 | [DNS-Modifying Process Detection](#query-5-dns-modifying-process-detection) | Detection | `DeviceProcessEvents` |
+| 6 | [Fleet DNS Anomaly — Rare DNS Servers](#query-6-fleet-dns-anomaly--rare-dns-servers) | Detection | `DeviceNetworkInfo` |
+| 7 | [DHCP-Assigned External DNS — The SOHO Router TTP](#query-7-dhcp-assigned-external-dns--the-soho-router-ttp) | Investigation | `DeviceNetworkInfo` |
+| 8 | [Post-Compromise AiTM — High-Risk Sign-Ins](#query-8-post-compromise-aitm--high-risk-sign-ins) | Investigation | `EntraIdSignInEvents` |
+| 9 | [Post-Compromise Mailbox Access — Search and MailItemsAccessed](#query-9-post-compromise-mailbox-access--search-and-mailitemsaccessed) | Investigation | `CloudAppEvents` |
+| — | [How to Build Your Organizational DNS Baseline](#how-to-build-your-organizational-dns-baseline) | Dashboard | `DeviceNetworkInfo` |
+
+
 ## Queries
 
 ### Query 1: DNS Configuration Drift — Baseline vs Recent

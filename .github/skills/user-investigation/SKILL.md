@@ -198,7 +198,7 @@ When a user requests a security investigation:
    ```
    ```powershell
    $env:PYTHONPATH = "<WORKSPACE_ROOT>"
-   .venv\Scripts\python.exe generate_report_from_json.py temp/investigation_<upn_prefix>_<timestamp>.json
+   .venv\Scripts\python.exe scripts/generate_report_from_json.py temp/investigation_<upn_prefix>_<timestamp>.json
    ```
 
 5. **IP Enrichment (Modes 2 & 3):**
@@ -318,7 +318,7 @@ When a user requests a security investigation:
    ```powershell
    $env:PYTHONPATH = "<WORKSPACE_ROOT>"
    cd "<WORKSPACE_ROOT>"
-   .\.venv\Scripts\python.exe generate_report_from_json.py temp/investigation_<upn_prefix>_<timestamp>.json
+   .\.venv\Scripts\python.exe scripts/generate_report_from_json.py temp/investigation_<upn_prefix>_<timestamp>.json
    ```
 
 **The HTML report generator handles:**

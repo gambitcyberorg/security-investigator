@@ -53,6 +53,24 @@ All queries below use `IsAgent = AccountDisplayName startswith "SecurityCopilotA
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [Security Copilot Activity Overview — All ActionTypes](#query-1-security-copilot-activity-overview--all-actiontypes) | Dashboard | `CloudAppEvents` + multi |
+| 2 | [Top Analysts by Prompt Volume](#query-2-top-analysts-by-prompt-volume) | Dashboard | `CloudAppEvents` |
+| 3 | [Human vs Agent Activity Split](#query-3-human-vs-agent-activity-split) | Investigation | `CloudAppEvents` + `TotalEvents` |
+| 4 | [Autonomous Agent Inventory and Volume](#query-4-autonomous-agent-inventory-and-volume) | Dashboard | `CloudAppEvents` + `TotalEvents` |
+| 5 | [Daily Usage Trend — Human vs Agent](#query-5-daily-usage-trend--human-vs-agent) | Dashboard | `CloudAppEvents` |
+| 6 | [Hourly Capacity Planning — Peak Usage Windows](#query-6-hourly-capacity-planning--peak-usage-windows) | Investigation | `CloudAppEvents` |
+| 7 | [Hour-of-Day × Day-of-Week Usage Heatmap](#query-7-hour-of-day--day-of-week-usage-heatmap) | Investigation | `CloudAppEvents` |
+| 8 | [Session Depth Distribution](#query-8-session-depth-distribution) | Investigation | `CloudAppEvents` |
+| 9 | [Copilot Experience Type Breakdown (Standalone vs Embedded)](#query-9-copilot-experience-type-breakdown-standalone-vs-embedded) | Dashboard | `CloudAppEvents` |
+| 10 | [Plugin and Setting Change Audit Trail](#query-10-plugin-and-setting-change-audit-trail) | Investigation | `CloudAppEvents` |
+| 11 | [Promptbook and Agent Lifecycle Activity](#query-11-promptbook-and-agent-lifecycle-activity) | Investigation | `CloudAppEvents` |
+| 12 | [Weekly Adoption Dashboard — Executive Summary](#query-12-weekly-adoption-dashboard--executive-summary) | Dashboard | `CloudAppEvents` |
+
+
 ## Query 1: Security Copilot Activity Overview — All ActionTypes
 
 **Purpose:** Get a complete picture of all Security Copilot operations in the environment — interactions, plugin management, promptbook lifecycle, agent management, and admin settings.

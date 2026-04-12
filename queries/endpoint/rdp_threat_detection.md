@@ -14,75 +14,25 @@
 
 This file covers **two RDP threat scenarios** with queries for both `SecurityEvent` and `DeviceLogonEvents`:
 
+---
+
 ## Quick Reference — Query Index
 
-| # | Query | Use Case | Table | Source Filter |
-|---|-------|----------|-------|---------------|
-| **Part A — Internal Lateral Movement** | | | | |
-| Q1 | Successful RDP authentications (baseline) | Baseline | `SecurityEvent` | RFC 1918 only |
-| Q2 | **Failed attempts before success (primary detection)** | **Investigation — start here for lateral movement** | `SecurityEvent` | RFC 1918 only |
-| Q3 | RDP activity summary with failure rates | Triage | `SecurityEvent` | RFC 1918 only |
-| Q4 | RDP spray — one source, many targets | Detection | `SecurityEvent` | RFC 1918 only |
-| Q5 | Failed RDP attempts by failure reason | Investigation | `SecurityEvent` | RFC 1918 only |
-| Q6 | RDP timeline — visualize attack progression | Investigation | `SecurityEvent` | RFC 1918 only |
-| **Part B — External Brute-Force (SecurityEvent)** | | | | |
-| Q7 | External RDP brute-force summary | Detection | `SecurityEvent` | Non-RFC 1918 |
-| Q8 | External RDP successful access | Detection (high-severity) | `SecurityEvent` | Non-RFC 1918 |
-| Q9 | **External failed-then-success correlation** | **Investigation — highest-fidelity external breach detection** | `SecurityEvent` | Non-RFC 1918 |
-| **Part C — External (MDE / DeviceLogonEvents)** | | | | |
-| Q10 | External RDP brute-force (MDE) | Detection | `DeviceLogonEvents` | Non-RFC 1918 |
-| Q11 | Successful external RDP access (MDE) | Detection (high-severity) | `DeviceLogonEvents` | Non-RFC 1918 |
-| Q12 | External failed-then-success correlation (MDE) | Investigation | `DeviceLogonEvents` | Non-RFC 1918 |
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [Successful RDP Authentications (Baseline)](#query-1-successful-rdp-authentications-baseline) | Dashboard | `SecurityEvent` |
+| 2 | [RDP Lateral Movement - Failed Attempts Before Success (PRIMARY DETE...](#query-2-rdp-lateral-movement---failed-attempts-before-success-primary-detection) | Detection | `SecurityEvent` |
+| 3 | [RDP Activity Summary with Failure Rates](#query-3-rdp-activity-summary-with-failure-rates) | Dashboard | `SecurityEvent` |
+| 4 | [RDP Spray Detection - One Source, Many Targets](#query-4-rdp-spray-detection---one-source-many-targets) | Detection | `SecurityEvent` |
+| 5 | [Failed RDP Attempts by Failure Reason](#query-5-failed-rdp-attempts-by-failure-reason) | Investigation | `SecurityEvent` |
+| 6 | [RDP Timeline - Visualize Attack Progression](#query-6-rdp-timeline---visualize-attack-progression) | Investigation | `SecurityEvent` |
+| 7 | [External RDP Brute-Force Summary (SecurityEvent)](#query-7-external-rdp-brute-force-summary-securityevent) | Dashboard | `SecurityEvent` |
+| 8 | [External RDP Successful Access (SecurityEvent)](#query-8-external-rdp-successful-access-securityevent) | Investigation | `SecurityEvent` |
+| 9 | [External RDP Failed-Then-Success Correlation (SecurityEvent)](#query-9-external-rdp-failed-then-success-correlation-securityevent) | Investigation | `SecurityEvent` |
+| 10 | [External RDP Brute-Force Detection (DeviceLogonEvents)](#query-10-external-rdp-brute-force-detection-devicelogonevents) | Detection | `DeviceLogonEvents` |
+| 11 | [Successful External RDP Access (DeviceLogonEvents)](#query-11-successful-external-rdp-access-devicelogonevents) | Investigation | `DeviceLogonEvents` |
+| 12 | [External RDP Failed-Then-Success Correlation (DeviceLogonEvents)](#query-12-external-rdp-failed-then-success-correlation-devicelogonevents) | Investigation | `DeviceLogonEvents` |
 
-**Investigation shortcuts:** For internet-facing devices, start with **Q7/Q10** (brute-force summary) + **Q9/Q12** (breach correlation). For internal lateral movement, start with **Q2** (failed-then-success). Part B vs Part C: use Part B if SecurityEvent connector is configured, fall back to Part C (DeviceLogonEvents) if not.
-
-| Scenario | Section | Queries | Source Filter |
-|----------|---------|---------|---------------|
-| **Internal Lateral Movement** | [Part A](#part-a-internal-lateral-movement-securityevent) | Q1–Q6 | RFC 1918 IPs only |
-| **External Brute-Force / Initial Access** | [Part B](#part-b-external-rdp-brute-force-securityevent) | Q7–Q9 | Non-RFC 1918 IPs only |
-| **External (MDE alternative)** | [Part C](#part-c-external-rdp-devicelogonevents-mde) | Q10–Q12 | Non-RFC 1918 via DeviceLogonEvents |
-
-**Scenario selection for LLM agents:** If the investigation target is an **internet-facing device** (e.g., Threat Pulse Q11 finding, or device with `IsInternetFacing == true`), use **Part B** (SecurityEvent) or **Part C** (DeviceLogonEvents). If the investigation is about **post-compromise movement between internal systems**, use **Part A**.
-
-### ⚠️ Table Coverage — Read Before Executing
-
-**Two tables, three parts:**
-- **Parts A & B** use `SecurityEvent` (EventID 4624/4625) — the authoritative source for RDP authentication events including SubStatus failure codes.
-- **Part C** uses `DeviceLogonEvents` (MDE) — richer context (`IsLocalAdmin`, `Protocol`) but less granular failure detail.
-
-| Table | Strengths | Limitations |
-|-------|-----------|-------------|
-| `SecurityEvent` (Parts A & B) | Granular Win Security log: SubStatus codes, failure reasons, Kerberos/NTLM detail | Requires Windows Security Event connector; may not exist for all devices |
-| `DeviceLogonEvents` (Part C) | MDE-normalized, `IsLocalAdmin` flag, works in AH without connector | Less granular failure detail; may not capture all 4625 events |
-
-**🔴 RULE:** When this file is referenced for a query file hunt, prefer the `SecurityEvent`-based queries (Part A or B) with entity substitution. Part C is an alternative when SecurityEvent data is unavailable.
-
-**Key Detection Patterns:**
-- Multiple failed authentication attempts from same source before success (Q2/Q9/Q12)
-- External brute-force against internet-facing RDP — dictionary usernames, high failure counts (Q7/Q10)
-- Successful external RDP logon from non-VPN/non-Bastion IP (Q8/Q11)
-- Rapid sequential RDP connections to multiple internal systems from one source (Q4)
-- High failure rates indicating credential guessing or enumeration (Q3/Q5)
-
-**Detection Scope:**
-- **Part A (Internal):** Filters for RFC 1918 private address ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
-- **Part B & C (External):** Filters for non-RFC 1918 IPs (excludes private, loopback, and 0.0.0.0 broker IPs)
-- **RDP-specific:** LogonType 10 (RemoteInteractive) for successes; LogonType 3 or 10 for failures
-
-### ⚠️ NLA LogonType Pitfall — Critical
-
-**Network Level Authentication (NLA)** — enabled by default on all modern Windows — authenticates RDP connections via CredSSP/NTLM *before* the RDP session is established. This changes how Windows logs the events:
-
-| Event | Without NLA | With NLA (default) |
-|-------|-------------|--------------------|
-| **Failed RDP auth** (4625) | LogonType **10** (RemoteInteractive) | LogonType **3** (Network) |
-| **Successful RDP session** (4624) | LogonType **10** | LogonType **10** (after NLA succeeds, the session upgrade is still LT10) |
-
-**Impact:** Queries filtering `LogonType == 10` for failed logons will return **0 results** on NLA-enabled devices, silently missing all RDP brute-force attempts. This is the #1 false-negative source for RDP lateral movement detection.
-
-**Fix applied in all queries below:** Failed logon detection uses `LogonType in (3, 10)` to catch both NLA and non-NLA failures. Successful logon detection keeps `LogonType == 10` (RDP session establishment). LogonType 3 for failures may include non-RDP network logons (SMB, WinRM) — correlate with `DeviceNetworkEvents` port 3389 for RDP-specific confirmation.
-
----
 
 ## Part A: Internal Lateral Movement (SecurityEvent)
 

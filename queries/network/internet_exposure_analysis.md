@@ -49,6 +49,26 @@ Combines three tiers of internet exposure intelligence to identify, validate, an
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [MDE Internet-Facing Devices (DeviceInfo)](#query-1-mde-internet-facing-devices-deviceinfo) | Investigation | `DeviceInfo` |
+| 2 | [Customer-Facing Devices (Exposure Graph)](#query-2-customer-facing-devices-exposure-graph) | Investigation | `ExposureGraphNodes` |
+| 3 | [Internet-Exposed Firewall Rules (Exposure Graph)](#query-3-internet-exposed-firewall-rules-exposure-graph) | Detection | `ExposureGraphEdges` |
+| 4 | [Inbound Connections Accepted — Device Ranking](#query-4-inbound-connections-accepted--device-ranking) | Investigation | `DeviceNetworkEvents` |
+| 5 | [Inbound Connections by Port](#query-5-inbound-connections-by-port) | Investigation | `DeviceNetworkEvents` |
+| 6 | [Top Inbound Attackers by Source IP](#query-6-top-inbound-attackers-by-source-ip) | Triage | `DeviceNetworkEvents` |
+| 7 | [RDP Brute-Force Analysis](#query-7-rdp-brute-force-analysis) | Detection | `DeviceNetworkEvents` |
+| 8 | [Connection Failures — Scanning/Probing Detection](#query-8-connection-failures--scanningprobing-detection) | Detection | `DeviceNetworkEvents` |
+| 9 | [Listening Ports — Service Discovery](#query-9-listening-ports--service-discovery) | Investigation | `DeviceNetworkEvents` |
+| 10 | [DeviceNetworkInfo — Devices on Public Networks](#query-10-devicenetworkinfo--devices-on-public-networks) | Investigation | `DeviceNetworkInfo` |
+| 11 | [Exposure Validation — Cross-Reference Graph Rules with Observed Tra...](#query-11-exposure-validation--cross-reference-graph-rules-with-observed-traffic) | Detection | `DeviceNetworkEvents` + `ExposureGraphNodes` |
+| 12 | [Specific Port Exposure Hunt](#query-12-specific-port-exposure-hunt) | Investigation | `DeviceNetworkEvents` |
+| 13 | [ExposureGraph Node Type Inventory](#query-13-exposuregraph-node-type-inventory) | Posture | `ExposureGraphNodes` |
+| 14 | [IP Address Nodes — Public IP Inventory](#query-14-ip-address-nodes--public-ip-inventory) | Posture | `ExposureGraphNodes` |
+
+
 ## Query 1: MDE Internet-Facing Devices (DeviceInfo)
 
 Authoritative internet-facing classification from Microsoft Defender for Endpoint. MDE flags devices as internet-facing based on **external scans** (Microsoft probes detecting reachable ports) and **observed inbound connections** (actual incoming traffic from public IPs). The tag auto-expires after 48 hours of no activity — stale data is automatically cleaned. This is the ground-truth source for internet exposure and should be checked **before** ExposureGraph topology queries.

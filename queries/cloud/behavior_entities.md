@@ -42,6 +42,22 @@ BehaviorEntities and BehaviorInfo are **Preview** companion tables populated by 
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [Behavior Overview — Volume by ActionType and Source](#query-1-behavior-overview--volume-by-actiontype-and-source) | Dashboard | `BehaviorInfo` |
+| 2 | [Behavior Detail with MITRE Mapping](#query-2-behavior-detail-with-mitre-mapping) | Investigation | `BehaviorInfo` |
+| 3 | [Entity Decomposition for a Specific Behavior](#query-3-entity-decomposition-for-a-specific-behavior) | Investigation | — |
+| 4 | [Enrich User Investigation — MCAS Behaviors for a UPN](#query-4-enrich-user-investigation--mcas-behaviors-for-a-upn) | Investigation | `BehaviorInfo` |
+| 5 | [Enrich IP Investigation — Behaviors Involving an IP](#query-5-enrich-ip-investigation--behaviors-involving-an-ip) | Investigation | `BehaviorInfo` |
+| 6 | [OAuth App Credential Abuse — Unusual Credential Additions](#query-6-oauth-app-credential-abuse--unusual-credential-additions) | Investigation | `BehaviorInfo` |
+| 7 | [Impossible Travel Summary with IP Extraction](#query-7-impossible-travel-summary-with-ip-extraction) | Dashboard | `BehaviorInfo` + `ImpossibleTravelActivity` |
+| 8 | [Kubernetes Container Drift / Malware Behaviors](#query-8-kubernetes-container-drift--malware-behaviors) | Investigation | `BehaviorInfo` |
+| 9 | [Cross-Reference Behaviors with SecurityAlert](#query-9-cross-reference-behaviors-with-securityalert) | Detection | `BehaviorInfo` + multi |
+| 10 | [All Entity Types and Roles Distribution](#query-10-all-entity-types-and-roles-distribution) | Investigation | — |
+
+
 ## Query 1: Behavior Overview — Volume by ActionType and Source
 
 **Purpose:** Understand what behavior types are active in your tenant and their relative volume.

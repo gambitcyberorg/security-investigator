@@ -683,11 +683,14 @@ Two variants are generated:
 - Changing `Domains:`, `threat_pulse_domains:`, or `drill_down_prompt:` values
 - Adding new domain tags (update `VALID_DOMAINS` in `build_manifest.py` first)
 
+**When to regenerate TOCs:** Run `python scripts/generate_tocs.py` after creating or updating a query file. The script auto-generates a `## Quick Reference — Query Index` table with clickable anchor links for every query heading that has a KQL code block. It is idempotent — strips and regenerates existing TOCs on re-run.
+
 | Action | Status |
 |--------|--------|
 | Creating a query file without `**Domains:**` | ❌ **PROHIBITED** |
 | Creating an investigation skill without `threat_pulse_domains:` | ❌ **PROHIBITED** |
 | Forgetting to run `build_manifest.py` after adding files | ❌ **PROHIBITED** |
+| Forgetting to run `generate_tocs.py` after adding/updating query files | ❌ **PROHIBITED** |
 
 **🔴 REQUIRED: cd-metadata blocks for ALL queries in `queries/`**
 

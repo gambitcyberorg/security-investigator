@@ -124,6 +124,44 @@ Reconstructed from the [FutureSearch discovery transcript](https://futuresearch.
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [— Direct litellm Installation Detection (DeviceProcessEvents)](#query-1--direct-litellm-installation-detection-deviceprocessevents) | Detection | `DeviceProcessEvents` |
+| 2 | [— Broad pip/pip3 Install Activity Audit (DeviceProcessEvents)](#query-2--broad-pippip3-install-activity-audit-deviceprocessevents) | Investigation | `DeviceProcessEvents` |
+| 3 | [— litellm File Artifacts on Disk (DeviceFileEvents)](#query-3--litellm-file-artifacts-on-disk-devicefileevents) | Investigation | `DeviceFileEvents` |
+| 4 | [— Malicious .pth File Detection (DeviceFileEvents)](#query-4--malicious-pth-file-detection-devicefileevents) | Detection | `DeviceFileEvents` |
+| 5 | [— C2 Domain Network Connections (DeviceNetworkEvents)](#query-5--c2-domain-network-connections-devicenetworkevents) | Investigation | `DeviceNetworkEvents` |
+| 6 | [— C2 Domain DNS Resolution (ASIM DNS)](#query-6--c2-domain-dns-resolution-asim-dns) | Investigation | `ASimDnsActivityLogs` |
+| 7 | [— PyPI Download Activity on Compromise Date (ASIM DNS)](#query-7--pypi-download-activity-on-compromise-date-asim-dns) | Investigation | `ASimDnsActivityLogs` |
+| 8 | [— PyPI Download Activity Baseline (ASIM DNS)](#query-8--pypi-download-activity-baseline-asim-dns) | Dashboard | `ASimDnsActivityLogs` |
+| 9 | [— Python Process Spawning Suspicious Network Connections (DeviceNet...](#query-9--python-process-spawning-suspicious-network-connections-devicenetworkevents) | Investigation | `DeviceNetworkEvents` |
+| 10 | [— Environment Variable Access by Python (DeviceProcessEvents)](#query-10--environment-variable-access-by-python-deviceprocessevents) | Investigation | `DeviceProcessEvents` |
+| 11 | [— SSH Key and Cloud Credential File Access (DeviceFileEvents)](#query-11--ssh-key-and-cloud-credential-file-access-devicefileevents) | Investigation | `DeviceFileEvents` |
+| 12 | [— Python Package Installation via CI/CD Agents (DeviceProcessEvents)](#query-12--python-package-installation-via-cicd-agents-deviceprocessevents) | Investigation | `DeviceProcessEvents` |
+| 13 | [— Unpinned pip install Detection (DeviceProcessEvents)](#query-13--unpinned-pip-install-detection-deviceprocessevents) | Detection | `DeviceProcessEvents` |
+| 14 | [— Post-Compromise Secret Exfiltration Pattern (DeviceNetworkEvents)](#query-14--post-compromise-secret-exfiltration-pattern-devicenetworkevents) | Investigation | `DeviceNetworkEvents` + `DeviceProcessEvents` |
+| 15 | [— Suspicious Domain Resolution After pip install (ASIM DNS + Device...](#query-15--suspicious-domain-resolution-after-pip-install-asim-dns--deviceprocessevents) | Investigation | `DeviceNetworkEvents` + multi |
+| 16 | [— Python Fleet Inventory (DeviceProcessEvents)](#query-16--python-fleet-inventory-deviceprocessevents) | Posture | `DeviceProcessEvents` |
+| 17 | [— Docker Build with pip install During Compromise Window (DevicePro...](#query-17--docker-build-with-pip-install-during-compromise-window-deviceprocessevents) | Investigation | `DeviceProcessEvents` |
+| 18 | [— Broad DNS Hunt for Newly Registered / Suspicious Domains from Pyt...](#query-18--broad-dns-hunt-for-newly-registered--suspicious-domains-from-python-asim-dns) | Investigation | `ASimDnsActivityLogs` |
+| 19 | [— Second C2 Domain: checkmarx[.]zone DNS Lookups (ASIM DNS)](#query-19--second-c2-domain-checkmarxzone-dns-lookups-asim-dns) | Investigation | `ASimDnsActivityLogs` |
+| 20 | [— Second C2 Domain: checkmarx[.]zone Network Connections (DeviceNet...](#query-20--second-c2-domain-checkmarxzone-network-connections-devicenetworkevents) | Investigation | `DeviceNetworkEvents` |
+| 21 | [— Sysmon.py Persistence Backdoor File Creation (DeviceFileEvents)](#query-21--sysmonpy-persistence-backdoor-file-creation-devicefileevents) | Investigation | `DeviceFileEvents` |
+| 22 | [— Systemd User Service Persistence (DeviceFileEvents)](#query-22--systemd-user-service-persistence-devicefileevents) | Investigation | `DeviceFileEvents` |
+| 23 | [— Kubernetes Secret Enumeration and Lateral Movement (DeviceProcess...](#query-23--kubernetes-secret-enumeration-and-lateral-movement-deviceprocessevents) | Investigation | `DeviceProcessEvents` |
+| 24 | [— Fork Bomb Detection: Exponential Python Process Spawning (DeviceP...](#query-24--fork-bomb-detection-exponential-python-process-spawning-deviceprocessevents) | Detection | `DeviceProcessEvents` |
+| 25 | [— MCP Server / uvx Transitive Dependency Pull (DeviceProcessEvents)](#query-25--mcp-server--uvx-transitive-dependency-pull-deviceprocessevents) | Investigation | `DeviceProcessEvents` |
+| 26 | [— Git Credential and Docker Config File Access by Python (DeviceFil...](#query-26--git-credential-and-docker-config-file-access-by-python-devicefileevents) | Investigation | `DeviceFileEvents` |
+| 27 | [— IMDS Metadata Endpoint Access from Python (DeviceNetworkEvents)](#query-27--imds-metadata-endpoint-access-from-python-devicenetworkevents) | Investigation | `DeviceNetworkEvents` |
+| 28 | [— v1.82.7-Specific: proxy_server.py Modification or p.py Drop (Devi...](#query-28--v1827-specific-proxyserverpy-modification-or-ppy-drop-devicefileevents) | Investigation | `DeviceFileEvents` |
+| 29 | [— Shell History and Package Manager Config Access by Python (Device...](#query-29--shell-history-and-package-manager-config-access-by-python-devicefileevents) | Investigation | `DeviceFileEvents` |
+| 30 | [— TeamPCP Full Campaign C2 Infrastructure (DeviceNetworkEvents)](#query-30--teampcp-full-campaign-c2-infrastructure-devicenetworkevents) | Investigation | `DeviceNetworkEvents` |
+| 31 | [— Compromised Trivy Versions in Software Inventory (DeviceTvmSoftwa...](#query-31--compromised-trivy-versions-in-software-inventory-devicetvmsoftwareinventory) | Posture | `DeviceTvmSoftwareInventory` |
+| 32 | [— TeamPCP DNS Lookups Across Full Campaign (DeviceEvents)](#query-32--teampcp-dns-lookups-across-full-campaign-deviceevents) | Investigation | `DeviceEvents` |
+
+
 ## Query Catalog
 
 ### Query 1 — Direct litellm Installation Detection (DeviceProcessEvents)

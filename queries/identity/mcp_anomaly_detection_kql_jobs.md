@@ -32,6 +32,17 @@ All jobs tested against real historical MCP telemetry. Results:
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| — | [Rule 1: New Sensitive Graph Endpoint via MCP](#rule-1-new-sensitive-graph-endpoint-via-mcp) | Detection | `LastActivity` + `MCPGraphAnomalies_KQL_CL` |
+| — | [Rule 2: MCP Volume Spike](#rule-2-mcp-volume-spike) | Dashboard | `LastActivity` + `MCPGraphAnomalies_KQL_CL` |
+| — | [Rule 3: Cross-MCP Suspicious Activity Chain](#rule-3-cross-mcp-suspicious-activity-chain) | Detection | `CrossMCPActivity` |
+| — | [Rule 4: New Azure MCP Server User](#rule-4-new-azure-mcp-server-user) | Detection | `LastActivity` |
+| — | [Rule 5: Large Data Retrieval via MCP](#rule-5-large-data-retrieval-via-mcp) | Detection | `LastActivity` |
+
+
 ## Overview
 
 These KQL queries are designed to run as **scheduled KQL jobs** in the Microsoft Sentinel Data Lake. They detect anomalous MCP server behavior, promote flagged events to the analytics tier (as `*_KQL_CL` tables), and enable standard analytics rules to fire alerts.

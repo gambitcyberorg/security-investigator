@@ -20,6 +20,26 @@ This guide covers two approaches for analyzing the Exposure Management attack su
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| — | [Tool 2: `graph_exposure_perimeter`](#tool-2-graphexposureperimeter) | Investigation | `ExposureGraphEdges` |
+| — | [Discover All Asset Types in Your Environment](#discover-all-asset-types-in-your-environment) | Investigation | `ExposureGraphNodes` |
+| — | [Find All Relationship Types](#find-all-relationship-types) | Investigation | `ExposureGraphEdges` |
+| — | [SECTION 1: Critical Devices & Assets](#section-1-critical-devices--assets) | Investigation | `ExposureGraphNodes` |
+| — | [SECTION 2: Critical Users & Identities](#section-2-critical-users--identities) | Investigation | `ExposureGraphEdges` + `ExposureGraphNodes` |
+| — | [SECTION 3: Attack Path Analysis](#section-3-attack-path-analysis) | Investigation | `ExposureGraphEdges` + `ExposureGraphNodes` |
+| — | [SECTION 4: Cloud Multi-Environment Analysis](#section-4-cloud-multi-environment-analysis) | Investigation | `ExposureGraphNodes` |
+| — | [SECTION 5: Vulnerability Analysis on Critical Assets](#section-5-vulnerability-analysis-on-critical-assets) | Investigation | `ExposureGraphEdges` + `ExposureGraphNodes` |
+| — | [SECTION 6: Exploration & Discovery Queries](#section-6-exploration--discovery-queries) | Investigation | `ExposureGraphNodes` |
+| — | [SECTION 7: External Data Source Integrations](#section-7-external-data-source-integrations) | Investigation | `ExposureGraphNodes` + multi |
+| — | [SECTION 8: Sample Property Inspection](#section-8-sample-property-inspection) | Investigation | `ExposureGraphNodes` |
+| — | [SECTION 9: Vulnerable Device Attack Paths — Cookie Chain Analysis](#section-9-vulnerable-device-attack-paths--cookie-chain-analysis) | Investigation | `ExposureGraphNodes` |
+| — | [SECTION 10: Attack Path Permission Analysis](#section-10-attack-path-permission-analysis) | Investigation | `ExposureGraphEdges` + `ExposureGraphNodes` |
+| — | [SECTION 11: Attack Path Entry Points & Choke Points](#section-11-attack-path-entry-points--choke-points) | Investigation | `ExposureGraphEdges` + `ExposureGraphNodes` |
+
+
 ## 🚀 Sentinel Graph MCP Tools — Recommended First Pass
 
 The Sentinel Exposure Graph MCP server provides four specialized tools that operate directly on the ExposureGraph. These are **faster and more effective** than raw KQL for common attack path scenarios — they handle multi-hop traversal, permission chain resolution, and criticality correlation automatically.

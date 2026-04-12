@@ -31,6 +31,32 @@ Exploitation → Web Shell/RAT → New Admin Account → RMM Install / Cloudflar
 
 ---
 
+## Quick Reference — Query Index
+
+| # | Query | Use Case | Key Table |
+|---|-------|----------|-----------|
+| 1 | [SHA-256 File Hash IOC Hunt](#query-1-sha-256-file-hash-ioc-hunt) | Investigation | `DeviceFileEvents` + multi |
+| 2 | [C2 IP Address IOC Hunt](#query-2-c2-ip-address-ioc-hunt) | Investigation | `DeviceNetworkEvents` |
+| 3 | [RMM Tool Installation/Execution Detection](#query-3-rmm-tool-installationexecution-detection) | Detection | `DeviceProcessEvents` + `PDQInventory` |
+| 4 | [AnyDesk Safe Mode Persistence](#query-4-anydesk-safe-mode-persistence) | Investigation | `DeviceProcessEvents` |
+| 5 | [New Local Admin Account Creation](#query-5-new-local-admin-account-creation) | Investigation | `DeviceProcessEvents` |
+| 6 | [Cloudflare Tunnel Masquerading or Execution](#query-6-cloudflare-tunnel-masquerading-or-execution) | Investigation | `DeviceProcessEvents` |
+| 7 | [WDigest Credential Caching Registry Modification](#query-7-wdigest-credential-caching-registry-modification) | Investigation | `DeviceRegistryEvents` |
+| 8 | [LSASS Credential Dumping Detection](#query-8-lsass-credential-dumping-detection) | Detection | `DeviceProcessEvents` |
+| 9 | [NTDS.dit / SAM Database Access](#query-9-ntdsdit--sam-database-access) | Investigation | `DeviceProcessEvents` |
+| 10 | [Defender Antivirus Tampering (Registry)](#query-10-defender-antivirus-tampering-registry) | Investigation | `DeviceRegistryEvents` |
+| 11 | [PowerShell AV Exclusion / Encoded Commands](#query-11-powershell-av-exclusion--encoded-commands) | Investigation | `DeviceProcessEvents` |
+| 12 | [Rclone / Bandizip Data Exfiltration Tools](#query-12-rclone--bandizip-data-exfiltration-tools) | Investigation | `DeviceProcessEvents` |
+| 13 | [PsExec / Impacket Lateral Movement](#query-13-psexec--impacket-lateral-movement) | Investigation | `DeviceProcessEvents` |
+| 14 | [RDP Firewall Modification](#query-14-rdp-firewall-modification) | Investigation | `DeviceProcessEvents` |
+| 15 | [Medusa Ransomware File Artifacts](#query-15-medusa-ransomware-file-artifacts) | Investigation | `DeviceFileEvents` |
+| 16 | [Web Shell Creation on Web Servers](#query-16-web-shell-creation-on-web-servers) | Investigation | `DeviceFileEvents` |
+| 17 | [Vulnerability Exposure Assessment](#query-17-vulnerability-exposure-assessment) | Posture | `DeviceTvmSoftwareVulnerabilities` |
+| 18 | [Correlated Defender Alerts for Storm-1175 TTPs](#query-18-correlated-defender-alerts-for-storm-1175-ttps) | Detection | `AlertInfo` |
+| 19 | [Veeam Backup Credential Recovery](#query-19-veeam-backup-credential-recovery) | Investigation | `DeviceProcessEvents` |
+| 20 | [PDQ Deploy Weaponized for Payload Delivery](#query-20-pdq-deploy-weaponized-for-payload-delivery) | Investigation | `DeviceProcessEvents` + `PDQInventory` |
+
+
 ## IOCs (2026 Campaign)
 
 | Indicator | Type | Description | First Seen | Last Seen |
