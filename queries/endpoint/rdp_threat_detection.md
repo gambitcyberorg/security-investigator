@@ -496,7 +496,7 @@ title: "External RDP Brute-Force: {{SourceIP}} → {{Computer}} ({{FailedAttempt
 impactedAssets:
   - type: "device"
     identifier: "deviceName"
-adaptation_notes: "NLA-aware. Entity substitution: add `| where Computer == 'HOSTNAME'` to scope to a specific device. Remove the Computer filter for fleet-wide scan."
+adaptation_notes: "NLA-aware. No minimum threshold — every external RDP failure surfaces. For CD deployment, consider adding `| where FailedAttempts >= 5` to reduce alert volume. Entity substitution: add `| where Computer == 'HOSTNAME'` to scope to a specific device. Remove the Computer filter for fleet-wide scan."
 -->
 ```kql
 // External RDP Brute-Force Summary (SecurityEvent)
@@ -527,7 +527,6 @@ SecurityEvent
     FirstSeen = min(TimeGenerated),
     LastSeen = max(TimeGenerated)
     by SourceIP, Computer
-| where FailedAttempts >= 5
 | order by FailedAttempts desc
 | take 25
 ```
@@ -536,9 +535,13 @@ SecurityEvent
 
 **Verdict guidance:**
 - **`FailedAttempts >= 50`:** Automated brute-force — consider IP block
+- **`FailedAttempts 5–49`:** Sustained probing — enrich IP via threat intel
+- **`FailedAttempts 1–4`:** Low-volume probe or short uptime window — still noteworthy on internet-facing devices
 - **`UniqueAccounts >= 5` + "User does not exist":** Username enumeration / dictionary spray
 - **`FailureReason == "Bad password"` + low account count:** Targeted password guessing
 - **`Account locked out` events:** Brute-force successfully triggered lockout policy
+
+**Why no threshold:** Any external failed RDP attempt is suspicious — even 1 failure from a public IP is a signal. Internal queries (Part A) use thresholds because internal failed logons are common (password typos, expired creds). External queries intentionally have no minimum to avoid silently dropping low-volume attacks on devices with short uptime or low attacker traffic.
 
 ---
 
@@ -817,7 +820,7 @@ title: "External RDP Brute-Force: {{RemoteIP}} targeted {{TargetUsers}} users on
 impactedAssets:
   - type: "device"
     identifier: "deviceName"
-adaptation_notes: "DeviceLogonEvents alternative to Q7. Entity substitution: add `| where DeviceName == 'HOSTNAME'` to scope. Threshold (FailedAttempts >= 10) is tunable."
+adaptation_notes: "DeviceLogonEvents alternative to Q7. No minimum threshold — every external RDP failure surfaces. For CD deployment, consider adding `| where FailedAttempts >= 5` to reduce alert volume. Entity substitution: add `| where DeviceName == 'HOSTNAME'` to scope. "
 -->
 
 ```kql
@@ -839,13 +842,14 @@ DeviceLogonEvents
     FirstSeen = min(Timestamp),
     LastSeen = max(Timestamp)
     by RemoteIP
-| where FailedAttempts >= 10
 | order by TargetUsers desc, FailedAttempts desc
 ```
 
 **Tuning:**
-- Increase `FailedAttempts >= 10` threshold for noisy internet-facing honeypots
+- Add `| where FailedAttempts >= 10` for noisy internet-facing honeypots with high scan volume
 - Add `| where DeviceName in ("server1", "server2")` to scope to known internet-facing assets
+
+**Why no threshold:** Same rationale as Q7 — any external failed RDP attempt is noteworthy. Add a threshold back only if the query returns excessive noise in high-traffic honeypot environments.
 
 ---
 
