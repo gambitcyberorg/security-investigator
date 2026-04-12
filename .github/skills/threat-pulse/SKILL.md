@@ -296,33 +296,31 @@ After every non-✅ drill-down that surfaces actionable entities, append a **`�
 
 | Entity | Required Columns | Actions | Notes |
 |--------|-----------------|---------|-------|
-| **📧 Email** | `NetworkMessageId`, `RecipientEmailAddress` | Soft/hard delete, move to folder | Add `EmailDirection` + `SenderFromAddress` to also delete sender's copy |
-| **💻 Device** | `DeviceId` | Isolate, AV scan, collect package, restrict apps | Use `summarize arg_max(Timestamp, *) by DeviceId` for latest state |
+| **📧 Email** | `NetworkMessageId`, `RecipientEmailAddress` | Soft/hard delete, move to folder, submit to Microsoft, initiate investigation | **Do NOT use `project`** — *Submit to Microsoft* and *Initiate Automated Investigation* require undocumented columns that `project` strips, silently greying out those options. The portal's *Show empty columns* toggle only works when columns exist in the result schema. Return all columns; use `where` to scope results. |
+| **💻 Device** | `DeviceId` | Isolate, collect investigation package, AV scan, initiate investigation, restrict app execution | Use `summarize arg_max(Timestamp, *) by DeviceId` for latest state |
 | **📁 File** | `SHA1` or `SHA256` + `DeviceId` | Quarantine file | Both hash and device required |
-| **🔐 Identity** | *(No AH Take Action)* | Portal: block, revoke, reset | Use Defender XDR Identity page links (see below) |
+| **� Indicator** | IP, URL/domain, or SHA hash column | Add indicator: allow, warn, or block | No *Take actions* button needed — click the value directly in AH results → *Add indicator* to create a Defender for Endpoint custom indicator |
+| **�🔐 Identity** | *(No AH Take Action)* | Portal: block, revoke, reset | Use Defender XDR Identity page links (see below) |
 
 #### Template Queries
 
-**📧 Email — Soft delete by NetworkMessageId:**
+**📧 Email — by NetworkMessageId:** *(no `project` — see Email row above)*
 ```kql
 EmailEvents
 | where Timestamp > ago(7d)
 | where NetworkMessageId in ("<id1>", "<id2>")
-| project NetworkMessageId, RecipientEmailAddress, Subject,
-    SenderFromAddress, EmailDirection, LatestDeliveryAction
 ```
-→ *Take actions → Delete email → Soft delete*
+→ *Take actions →* Move to mailbox folder, Delete email (soft/hard), Submit to Microsoft, Initiate automated investigation
 
-**📧 Email — Bulk purge by compromised sender domain:**
+**📧 Email — by compromised sender domain:**
 ```kql
 EmailEvents
 | where Timestamp > ago(30d)
 | where SenderFromDomain =~ "<domain>" and ThreatTypes has "Phish" and DeliveryAction == "Delivered"
-| project NetworkMessageId, RecipientEmailAddress, Subject,
-    SenderFromAddress, EmailDirection, LatestDeliveryAction
 ```
+→ *Take actions →* Move to mailbox folder, Delete email (soft/hard), Submit to Microsoft, Initiate automated investigation
 
-**💻 Device — Isolate:**
+**💻 Device — by DeviceName:**
 ```kql
 DeviceInfo
 | where Timestamp > ago(1d)
@@ -330,16 +328,18 @@ DeviceInfo
 | summarize arg_max(Timestamp, *) by DeviceId
 | project DeviceId, DeviceName, OSPlatform, MachineGroup
 ```
+→ *Take actions →* Isolate device, Collect investigation package, Run antivirus scan, Initiate investigation, Restrict app execution
 
-**📁 File — Quarantine by hash:**
+**📁 File — by hash:**
 ```kql
 DeviceFileEvents
 | where Timestamp > ago(7d)
 | where SHA1 == "<hash>" or SHA256 == "<hash>"
 | project DeviceId, DeviceName, SHA1, SHA256, FileName, FolderPath
 ```
+→ *Take actions →* Quarantine file
 
-**🔐 Identity — Portal links + bulk PowerShell:**
+**🔐 Identity — Portal links:**
 
 Generate a clickable Defender XDR Identity link per user: `https://security.microsoft.com/user?aad=<ObjectId>&upn=<UPN>&tab=overview` (fallback: `?sid=<SID>&accountName=<Name>&accountDomain=<Domain>` for on-prem, `?upn=<UPN>` for external IdP). Present as a table with the actual portal action names:
 
@@ -355,19 +355,13 @@ Portal actions available (under `⋯` menu on Identity page):
 - **Suspend user in app** — suspends the user's access in the connected cloud app (MCAS-governed apps)
 - **Account settings in app** — opens the user's account settings in the connected app for manual changes
 
-Bulk session revocation (PowerShell equivalent of "Require user to sign in again"):
-```powershell
-@("<UPN1>", "<UPN2>") | ForEach-Object {
-    Invoke-MgGraphRequest -Method POST -Uri "https://graph.microsoft.com/v1.0/users/$_/revokeSignInSessions"
-}
-```
-
 #### Rules
 
 | Rule | Status |
 |------|--------|
 | Non-✅ drill-down surfaces actionable entities but no Take Action block | ❌ **PROHIBITED** |
 | Take Action query missing a required column | ❌ **PROHIBITED** |
+| Email Take Action query using `project` (strips columns needed by Submit to Microsoft / Initiate Automated Investigation) | ❌ **PROHIBITED** |
 | Take Action block with correct required columns + recommended action | ✅ **REQUIRED** |
 
 ---
