@@ -346,9 +346,9 @@ DeviceFileEvents
 | Entity | URL Pattern | Example |
 |--------|------------|---------|
 | **User** | `https://security.microsoft.com/user?aad=<OID>&upn=<UPN>&tab=overview` | `[user@contoso.com](https://security.microsoft.com/user?aad=<OID>&upn=user@contoso.com&tab=overview)` |
-| **Domain** | `https://security.microsoft.com/domains/overview?urlDomain=<domain>` | `[alpineskihouse.co](https://security.microsoft.com/domains/overview?urlDomain=alpineskihouse.co)` |
+| **Domain** | `https://security.microsoft.com/domains/overview?urlDomain=<domain>` | `[contoso.com](https://security.microsoft.com/domains/overview?urlDomain=contoso.com)` |
 | **URL** | `https://security.microsoft.com/url/overview?url=<url-encoded-URL>` | `[example.com/path](https://security.microsoft.com/url/overview?url=http%3A%2F%2Fexample.com%2Fpath)` |
-| **IP** | `https://security.microsoft.com/ip/<IP>/overview` | `[203.0.113.42](https://security.microsoft.com/ip/203.0.113.42/overview)` |
+| **IP** | `https://security.microsoft.com/ip/<IP>/overview` | `[<IP>](https://security.microsoft.com/ip/<IP>/overview)` |
 | **File Hash** | `https://security.microsoft.com/file/<SHA1-or-SHA256>/` | `[da5e459...b1bb1e](https://security.microsoft.com/file/da5e45915354850261cf0e87dc7af19597b1bb1e/)` |
 
 **User fallbacks:** `?upn=<UPN>` when ObjectId is unavailable; `?sid=<SID>&accountName=<Name>&accountDomain=<Domain>` for on-prem AD.
