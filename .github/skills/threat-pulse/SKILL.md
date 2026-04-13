@@ -18,7 +18,7 @@ The Threat Pulse skill is a rapid, broad-spectrum security scan designed for the
 | 🤖 **Identity (NonHuman)** | Which service principals expanded their resource/IP/location footprint? |
 | 💻 **Endpoint** | Which endpoints deviated most from their process behavioral baseline? What singleton process chains exist? |
 | 📧 **Email Threats** | What's the phishing/spam/malware breakdown? Were any phishing emails delivered? |
-| 🔑 **Admin & Cloud Ops** | What mailbox rules, OAuth consents, transport rules, or mailbox permission changes occurred? Who performed high-impact admin operations? |
+| 🔑 **Admin & Cloud Ops** | What mailbox rules, OAuth consents, transport rules, or mailbox permission changes occurred? Is there programmatic mailbox access via API? Any MCAS-flagged compromised sign-ins? Human-initiated CA policy changes? Who performed high-impact admin operations — role assignments, MFA registration, app registration, ownership grants? |
 | 🛡️ **Exposure** | Are any critical assets internet-facing with RCE vulnerabilities? What exploitable CVEs (CVSS ≥ 8) are present across the fleet? |
 
 **Data sources:** `SecurityIncident`, `SecurityAlert`, `IdentityInfo`, `AADUserRiskEvents`, `EntraIdSignInEvents`, `DeviceProcessEvents`, `DeviceLogonEvents`, `ExposureGraphNodes`, `AADServicePrincipalSignInLogs`, `EmailEvents`, `CloudAppEvents`, `AuditLogs`, `DeviceTvmSoftwareVulnerabilities`, `DeviceTvmSoftwareVulnerabilitiesKB`
@@ -183,8 +183,16 @@ Estimated time: ~2–4 minutes
 | Q5 | SPN with drift | `scope-drift-detection/spn` | `Analyze drift for <SPN>` |
 | Q6–Q7 | Device in findings | `computer-investigation` | `Investigate device <hostname>` |
 | Q8 | Phishing delivered or malware detected | `email-threat-posture` | `Run email threat posture report` |
-| Q9–Q10 | Username/UPN in findings | `user-investigation` | `Investigate <UPN>` |
-| Q10 | Bulk credential/password ops from single actor | `identity-posture` | `Run identity posture report` |
+| Q9 | `Compromised Sign-In` user surfaced | `user-investigation` | `Investigate <UPN>` |
+| Q9 | `Mailbox Read (API)` or `Mail Send (API)` actors | `user-investigation` | `Investigate <UPN>` |
+| Q9 | `Conditional Access Change` by human actor | `ca-policy-investigation` | `Investigate CA policy changes by <UPN>` |
+| Q9 | `Exchange Admin/Rule Change` actors | `user-investigation` | `Investigate <UPN>` |
+| Q10 | `MFA-Registration` — user registering/deleting security info | `user-investigation` | `Investigate <UPN>` |
+| Q10 | `AppRegistration` — app create/consent/secret operations | `app-registration-posture` | `Run app registration posture report` |
+| Q10 | `Ownership` — ownership grants on apps/groups/SPNs | `app-registration-posture` | `Run app registration posture report` |
+| Q10 | `RoleManagement` targeting Global/Security Admin roles | `identity-posture` | `Run identity posture report` |
+| Q10 | Bulk `Password` resets from single actor | `identity-posture` | `Run identity posture report` |
+| Q10 | 3+ categories with same actor in TopActors | `user-investigation` | `Investigate <UPN>` |
 | Q11–Q12 | Device in findings | `computer-investigation` | `Investigate device <hostname>` |
 | Q12 | CVE with fleet impact | `exposure-investigation` | `Run vulnerability report for <CVE>` |
 
@@ -617,23 +625,20 @@ SecurityIncident
 
 ### Query 3: Identity Risk Posture & Risk Event Enrichment
 
-🔐 **Identity risk posture** — Two-layer query: `IdentityInfo` identifies users needing attention (High/Medium risk, AtRisk/ConfirmedCompromised, or high criticality), then `AADUserRiskEvents` enriches with the specific risk detections explaining *why* they're flagged. Covers both sign-in-level detections (e.g., `anonymizedIPAddress`, `unfamiliarFeatures`) AND user-level AI-driven signals (e.g., `aiCompoundAccountRisk`, `adminConfirmedUserCompromised`) that never appear in sign-in tables.
+🔐 **Identity risk posture** — Hybrid two-signal query: `IdentityInfo.RiskScore` (Defender XDR composite, 0-100) captures alert-chain and MITRE-stage risk, while `RiskLevel`/`RiskStatus` (Identity Protection) captures sign-in anomalies and AI-driven signals. Uses both because **they are independent engines** — a user can have RiskScore=93 with Remediated IdP status, or RiskScore=0 with High/AtRisk IdP status. `AADUserRiskEvents` enriches with the specific detections explaining *why* they're flagged.
 
 **Tool:** `RunAdvancedHuntingQuery`
 
 ```kql
 let lookback = 7d;
-// Layer 1: IdentityInfo — filtered to users needing attention
+// Layer 1: IdentityInfo — hybrid filter (Defender RiskScore + IdP RiskLevel/Status + Criticality)
 let IdentityPosture = IdentityInfo
 | where Timestamp > ago(lookback)
-| where RiskLevel in ("High", "Medium") 
-    or RiskStatus in ("AtRisk", "ConfirmedCompromised") 
-    or CriticalityLevel >= 3
-| project Timestamp, AccountUpn, AccountObjectId, AccountName, AccountDomain, 
-    OnPremSid, AccountDisplayName, RiskLevel, RiskStatus, CriticalityLevel
 | summarize arg_max(Timestamp, *) by AccountUpn
-| project AccountUpn, AccountObjectId, AccountName, AccountDomain, OnPremSid,
-    AccountDisplayName, IdP_RiskLevel = RiskLevel, IdP_RiskStatus = RiskStatus, CriticalityLevel;
+| where RiskScore >= 71
+    or RiskLevel in ("High", "Medium")
+    or RiskStatus in ("AtRisk", "ConfirmedCompromised")
+    or CriticalityLevel >= 3;
 // Layer 2: AADUserRiskEvents — enrichment (the why)
 let UserRiskEvents = AADUserRiskEvents
 | where TimeGenerated > ago(lookback)
@@ -651,7 +656,6 @@ IdentityPosture
     on $left.AccountUpn == $right.UserPrincipalName
 | extend 
     DisplayName = coalesce(AccountDisplayName, AccountName, AccountUpn),
-    RiskSummary = strcat(IdP_RiskLevel, " / ", IdP_RiskStatus),
     PortalUrl = strcat("https://security.microsoft.com/user?",
         case(
             isnotempty(AccountObjectId), strcat("aad=", AccountObjectId, "&upn=", AccountUpn),
@@ -660,33 +664,30 @@ IdentityPosture
             isnotempty(AccountUpn), strcat("upn=", AccountUpn),
             ""),
         "&tab=overview")
-| project DisplayName, PortalUrl, RiskSummary, CriticalityLevel,
+| project DisplayName, PortalUrl, RiskScore, RiskLevel, RiskStatus, CriticalityLevel,
     RiskDetections = coalesce(RiskDetections, long(0)),
     HighCount = coalesce(HighCount, long(0)),
     TopRiskEventTypes, TopCountries, LatestDetection
-| order by HighCount desc, RiskDetections desc, CriticalityLevel desc
+| order by RiskScore desc, HighCount desc, RiskDetections desc, CriticalityLevel desc
 | take 15
 ```
 
-**Purpose:** Surfaces up to 15 users with the highest identity risk — combining Entra ID risk posture (`IdentityInfo`) with specific risk detection events (`AADUserRiskEvents`). The two-layer approach catches users flagged by:
-- **Sign-in-level detections:** `anonymizedIPAddress`, `unfamiliarFeatures`, `impossibleTravel`, `mcasSuspiciousInboxManipulationRules`, `suspiciousAuthAppApproval`
-- **User-level AI signals:** `aiCompoundAccountRisk` (cross-signal composite from MDE alerts + sign-in patterns + MCAS activity), `adminConfirmedUserCompromised`, `suspiciousAPITraffic`
-- **High-criticality accounts:** `CriticalityLevel >= 3` (Exposure Management) — surfaced even without active risk detections
+**Purpose:** `RiskScore` (int, 0-100) is the Defender XDR composite score on `IdentityInfo` — factors include alert chains, MITRE stage progression, and asset criticality. Portal thresholds: 71-90 = High, 91-100 = Critical. `RiskLevel`/`RiskStatus` are Identity Protection signals (sign-in anomalies, leaked creds, AI signals) — a separate engine that doesn't always agree with RiskScore. The hybrid `OR` filter ensures users flagged by either engine surface. Users with both signals firing are highest priority (corroborated).
 
-**Output columns:** `DisplayName` (linked to Defender XDR Identity page via `PortalUrl`), `RiskSummary` (e.g., "High / AtRisk"), `CriticalityLevel`, `RiskDetections` (count), `HighCount`, `TopRiskEventTypes` (human-readable strings), `TopCountries`, `LatestDetection`.
+**Output columns:** `DisplayName` (linked to Defender XDR Identity page via `PortalUrl`), `RiskScore` (0-100, primary sort), `RiskLevel`, `RiskStatus`, `CriticalityLevel`, `RiskDetections` (count), `HighCount`, `TopRiskEventTypes`, `TopCountries`, `LatestDetection`.
 
 **Portal URL resolution:** Three-tier fallback for identity environment coverage:
 - Cloud/Hybrid (has Entra ObjectId): `aad=<ObjectId>&upn=<UPN>`
 - On-prem AD (SID only, no Entra sync): `sid=<SID>&accountName=<Name>&accountDomain=<Domain>`
 - External IdP (UPN only, e.g., CyberArk/Okta): `upn=<UPN>`
 
-**Report rendering:** Show top 10 users in the dashboard table. Use `DisplayName` as clickable link text with `PortalUrl` as the target. If >10 results, note `"+N more — drill down with user-investigation skill"`. For each user, render `TopRiskEventTypes` as the key risk indicators.
+**Report rendering:** Show top 10 users in the dashboard table. Use `DisplayName` as clickable link text with `PortalUrl` as the target. If >10 results, note `"+N more — drill down with user-investigation skill"`. For each user, render `RiskScore` and `TopRiskEventTypes` as the key risk indicators.
 
 **Verdict logic:**
-- 🔴 Escalate: Any user with `ConfirmedCompromised` status, or `HighCount > 3`, or multiple users with `HighCount > 0`
-- 🟠 Investigate: `HighCount > 0` for any user, or any user `AtRisk` with risk events indicating `aiCompoundAccountRisk`, `impossibleTravel`, or `maliciousIPAddress`
+- 🔴 Escalate: Any user with `RiskScore >= 91`, or `ConfirmedCompromised` status, or `HighCount > 3`, or multiple users with `HighCount > 0`
+- 🟠 Investigate: `RiskScore >= 71`, or `HighCount > 0` for any user, or any user `AtRisk` with risk events indicating `aiCompoundAccountRisk`, `impossibleTravel`, or `maliciousIPAddress`
 - 🟡 Monitor: Only `Medium` risk users with low-severity risk event types (e.g., `unfamiliarFeatures`)
-- ✅ Clear: 0 users matching the IdentityInfo risk/criticality filter
+- ✅ Clear: 0 users matching the hybrid filter
 
 **⚠️ Risk Event Type Routing Guard (Phase 4 drill-down):**
 - `suspiciousAuthAppApproval` → **T1621 MFA Fatigue** (suspicious Authenticator push approval patterns), **NOT** OAuth app consent. Route to `user-investigation` or `authentication-tracing`. **NEVER** recommend `app-registration-posture` based on this risk event alone
@@ -961,7 +962,7 @@ EmailEvents
 
 ### Query 9: Cloud App Suspicious Activity
 
-🔑 **Cloud ops monitoring** — Detects mailbox rule manipulation, transport rule changes, mailbox delegation, and programmatic mailbox access via CloudAppEvents.
+🔑 **Cloud ops monitoring** — Detects mailbox rule manipulation, transport rule changes, mailbox delegation, programmatic mailbox access (API), MCAS-flagged compromised sign-ins, and human-initiated Conditional Access policy changes via CloudAppEvents.
 
 **Tool:** `RunAdvancedHuntingQuery`
 
@@ -969,63 +970,106 @@ EmailEvents
 CloudAppEvents
 | where Timestamp > ago(7d)
 | where ActionType in (
-    "New-InboxRule", "Set-InboxRule",
-    "Set-Mailbox",
-    "Add-MailboxPermission",
-    "New-TransportRule", "Set-TransportRule",
-    "New-Mailbox"
+    // Exchange — Mail flow manipulation
+    "New-InboxRule", "Set-InboxRule", "Set-Mailbox",
+    "Add-MailboxPermission", "New-TransportRule", "Set-TransportRule", "New-Mailbox",
+    // Exchange — Anti-forensic & Data Access
+    "Remove-MailboxPermission", "Remove-InboxRule",
+    "MailItemsAccessed", "Send",
+    // Conditional Access manipulation (human-initiated only)
+    "Set-ConditionalAccessPolicy", "New-ConditionalAccessPolicy",
+    // Compromise signals
+    "CompromisedSignIn"
 )
+// Filter out system/automation-driven CA changes (CA agent, backup policies)
+| where not(ActionType in ("Set-ConditionalAccessPolicy", "New-ConditionalAccessPolicy") 
+            and isempty(AccountDisplayName))
+// Extract client context for Exchange data access events
+| extend ParsedData = parse_json(RawEventData)
+| extend ClientInfo = tostring(ParsedData.ClientInfoString)
+| extend Category = case(
+    ActionType == "MailItemsAccessed" and ClientInfo has "Client=REST", "Mailbox Read (API)",
+    ActionType == "Send" and ClientInfo has "Client=REST", "Mail Send (API)",
+    ActionType == "MailItemsAccessed", "Mailbox Read (Client)",
+    ActionType == "Send", "Mail Send (Client)",
+    ActionType in ("New-InboxRule", "Set-InboxRule", "Remove-InboxRule",
+                   "Set-Mailbox", "Add-MailboxPermission", "Remove-MailboxPermission",
+                   "New-TransportRule", "Set-TransportRule", "New-Mailbox"),
+    "Exchange Admin/Rule Change",
+    ActionType in ("Set-ConditionalAccessPolicy", "New-ConditionalAccessPolicy"),
+    "Conditional Access Change",
+    ActionType == "CompromisedSignIn",
+    "Compromised Sign-In",
+    "Other")
 | summarize
     Count = count(),
-    LatestTime = max(Timestamp),
-    SampleTargets = make_set(ObjectName, 3)
-    by ActionType, AccountDisplayName
+    UniqueActors = dcount(AccountDisplayName),
+    TopActors = make_set(AccountDisplayName, 5),
+    Actions = make_set(ActionType, 5),
+    LatestTime = max(Timestamp)
+    by Category
 | order by Count desc
-| take 20
 ```
 
-**Purpose:** Surfaces cloud app activity that Q10 (AuditLogs) cannot see — mailbox rule creation/modification (T1114.003 email exfiltration via forwarding), transport rule changes (org-wide mail routing manipulation), mailbox permission grants (delegate access abuse), and new mailbox creation.
+**Purpose:** Five-category view of cloud app activity invisible to Q10 (AuditLogs). Key non-obvious details: `ClientInfoString` in `RawEventData` distinguishes API access (`Client=REST` = Graph API programmatic) from interactive clients (MAPI-RPC, OWA) — API-driven mailbox reads by human accounts = potential BEC. `CompromisedSignIn` is an MCAS signal independent from Q3's Identity Protection risk events — dual-source corroboration when both fire. CA changes with empty `AccountDisplayName` are system/agent-driven and filtered out.
 
 **Verdict logic:**
-- 🔴 Escalate: `New-InboxRule` or `Set-InboxRule` with forwarding targets to external domains
-- 🟠 Investigate: Any `New-TransportRule` / `Set-TransportRule` (org-wide impact); `Add-MailboxPermission` from non-admin accounts
-- 🟡 Monitor: `Set-Mailbox` changes
-- ✅ Clear: 0 results — none of these high-signal operations occurred
+- 🔴 Escalate: `Compromised Sign-In` with 5+ users, OR `Mailbox Read (API)` from non-service-accounts, OR `Conditional Access Change` by any human actor, OR `Exchange Admin/Rule Change` with forwarding-related rules (`New-InboxRule`, `Set-InboxRule`, `New-TransportRule`)
+- 🟠 Investigate: `Compromised Sign-In` (any count), OR `Mail Send (API)` from unexpected actors, OR `Remove-InboxRule` / `Remove-MailboxPermission` (anti-forensic cleanup signals)
+- 🟡 Monitor: Only `Mailbox Read (Client)` or `Mail Send (Client)` activity, OR low-count `Set-Mailbox` from system actors
+- ✅ Clear: 0 results across all categories
 
-**Drill-down:** Use `user-investigation` skill for actors performing suspicious mailbox operations. **⚠️ When drilling down on ANY email-related Q9 finding, ALWAYS also query `OfficeActivity` (Exchange workload)** — CloudAppEvents and OfficeActivity are **complementary, not alternatives**. CloudAppEvents captures ActionType-based summaries and `AccountDisplayName`, but OfficeActivity provides the full `Parameters` JSON (forwarding targets: `ForwardTo`, `RedirectTo`, `ForwardingSmtpAddress`), per-operation `ClientIP`, and a broader set of Exchange audit operations — including `MoveToDeletedItems` (evidence destruction), `MailItemsAccessed` (programmatic mailbox reads), `Send` (outbound email from compromised account), `SoftDelete`/`HardDelete`, and `MailboxLogin` — that reveal post-compromise persistence, exfiltration, and lateral phishing patterns CloudAppEvents alone cannot surface. Query pattern: `OfficeActivity | where TimeGenerated > ago(Nd) | where OfficeWorkload == "Exchange" | where UserId =~ '<UPN>' | project TimeGenerated, Operation, ClientIP, Parameters, SessionId | order by TimeGenerated desc`. See `queries/email/email_threat_detection.md` for verified OfficeActivity query patterns.
+**Drill-down:** Use `user-investigation` skill for actors in `Compromised Sign-In`, `Mailbox Read (API)`, or `Mail Send (API)` categories. Use `ca-policy-investigation` skill for `Conditional Access Change` findings. **⚠️ When drilling down on ANY Exchange-related Q9 finding, ALWAYS also query `OfficeActivity` (Exchange workload)** — CloudAppEvents and OfficeActivity are **complementary, not alternatives**. CloudAppEvents captures ActionType-based summaries and `AccountDisplayName`, but OfficeActivity provides the full `Parameters` JSON (forwarding targets: `ForwardTo`, `RedirectTo`, `ForwardingSmtpAddress`), per-operation `ClientIP`, and a broader set of Exchange audit operations — including `MoveToDeletedItems` (evidence destruction), `SoftDelete`/`HardDelete`, and `MailboxLogin` — that reveal post-compromise persistence, exfiltration, and lateral phishing patterns CloudAppEvents alone cannot surface. Query pattern: `OfficeActivity | where TimeGenerated > ago(Nd) | where OfficeWorkload == "Exchange" | where UserId =~ '<UPN>' | project TimeGenerated, Operation, ClientIP, Parameters, SessionId | order by TimeGenerated desc`. See `queries/email/email_threat_detection.md` for verified OfficeActivity query patterns.
 
 ---
 
 ### Query 10: High-Impact Privileged Operations
 
-🔑 **Admin activity monitoring** — Recent high-privilege operations: role assignments, credential additions, consent grants, CA policy changes, password resets.
+🔑 **Admin activity monitoring** — Category-aggregated view of privileged operations: role assignments, PIM activations, credential lifecycle, consent grants, CA policy changes, password management, MFA registration, app registration, and ownership grants.
 
 **Tool:** `RunAdvancedHuntingQuery`
 
 ```kql
-AuditLogs
+let PrivOps = AuditLogs
 | where TimeGenerated > ago(7d)
-| where OperationName has_any ("role", "credential", "consent", "Conditional Access", "password", "certificate")
+| where OperationName has_any (
+    "role", "credential", "consent", "Conditional Access", "password", "certificate",
+    "security info", "owner", "application"
+)
 | where Result == "success"
 | extend Actor = tostring(InitiatedBy.user.userPrincipalName)
+// Exclude system-driven CA policy additions (empty actor = CA agent)
+| where not(OperationName has "conditional access" and isempty(Actor))
 | extend Target = tostring(TargetResources[0].displayName)
+| extend Category = case(
+    OperationName has "security info", "MFA-Registration",
+    OperationName has "owner", "Ownership",
+    OperationName has "application", "AppRegistration",
+    OperationName has "role", "RoleManagement",
+    OperationName has "credential" or OperationName has "certificate", "Credentials",
+    OperationName has "consent", "Consent",
+    OperationName has "Conditional Access", "ConditionalAccess",
+    OperationName has "password", "Password",
+    "Other");
+PrivOps
 | summarize 
     Count = count(),
+    UniqueActors = dcount(Actor),
+    TopActors = make_set(Actor, 5),
     Operations = make_set(OperationName, 5),
     Targets = make_set(Target, 5),
     LatestTime = max(TimeGenerated)
-    by Actor
+    by Category
 | order by Count desc
-| take 15
 ```
 
-**Purpose:** Shows who's been performing privileged admin operations. Unexpected actors or unusual volume (e.g., 36 password resets from one user in a week) warrant investigation. System-initiated operations (empty Actor) are normal PIM lifecycle events.
+**Purpose:** Category-level aggregation ensures all 8 privilege domains surface regardless of volume distribution (previous per-actor aggregation was truncated at 15 rows, hiding MFA-Registration, Ownership, and AppRegistration). Key non-obvious details: `MFA-Registration` deletion + re-registration by same user = credential takeover (T1556.006). `Ownership` grants to external accounts = persistence (T1098). System-driven CA additions (empty Actor) are filtered out. `Password` category is high-volume by nature — flag single-actor bulk resets, not self-service.
 
 **Verdict logic:**
-- 🔴 Escalate: Credential/consent/CA policy changes from unexpected actors, or bulk password resets from a single user
-- 🟠 Investigate: Unexpected user appearing as Actor; high-volume single-user operations
-- 🟡 Monitor: Normal PIM/system operations; expected admin activity
-- ✅ Clear: Only system-driven operations with expected volume
+- 🔴 Escalate: `MFA-Registration` deletions + registrations for same user (method swap attack), OR `Consent` grants from unexpected actors, OR `Ownership` grants to external accounts, OR `ConditionalAccess` changes by non-admin actors, OR `AppRegistration` with secrets management from external domains
+- 🟠 Investigate: `MFA-Registration` from CTF/external accounts, OR `RoleManagement` targeting Global Admin / Security Admin roles, OR `AppRegistration` consent operations, OR `Password` with bulk admin resets (single actor, 10+ targets)
+- 🟡 Monitor: Normal PIM activations and expirations, self-service password resets, credential lifecycle (WHfB/passkey registration)
+- ✅ Clear: 0 results or only system-driven operations with expected volume
 
 ---
 
@@ -1139,11 +1183,19 @@ After all queries complete, check these correlation patterns and escalate priori
 | Incident device matches drifting endpoint | Q1 `Devices` ∩ Q6 `DeviceName` | Incident target has behavioral anomalies on endpoint | Escalate to 🔴 |
 | Incident device has exploitable CVE | Q1 `Devices` ∩ Q12 `DeviceName` | Incident device is vulnerable to active exploitation | Escalate to 🔴 |
 | Spray target already in incident | Q4 targets ∩ Q1 `Accounts` | Spray target is already involved in an active incident | Escalate to 🔴 |
-| SPN drift AND unusual credential/consent activity | Q5 + Q9 | App credential abuse / persistence | Escalate to 🔴 |
+| SPN drift AND unusual credential/consent activity | Q5 + Q10 | App credential abuse / persistence | Escalate to 🔴 |
 | Device with rare process chain AND exploitable CVE | Q7 + Q12 | Potential active exploitation | Escalate to 🔴 |
 | Spray IP target already flagged as risky | Q4 + Q3 | Spray target has active Identity Protection risk | Escalate to 🔴 |
 | Closed TP tactics match active findings | Q2 + Q3/Q7/Q8 | Same attack pattern recurring despite recent closures | Escalate to 🟠, note recurrence |
 | Mailbox rule manipulation AND email threats | Q9 + Q8 | Potential email exfiltration setup following phishing | Escalate to 🔴 |
+| Compromised Sign-In user matches risky identity | Q9 `Compromised Sign-In` ∩ Q3 `AccountUpn` | MCAS compromise + Identity Protection risk — dual-signal corroboration | Escalate to 🔴 |
+| Compromised Sign-In user has Mailbox Read (API) | Q9 `Compromised Sign-In` ∩ Q9 `Mailbox Read (API)` | Compromised account actively exfiltrating email via API — BEC kill chain | Escalate to 🔴 |
+| Compromised Sign-In user in open incident | Q9 `Compromised Sign-In` ∩ Q1 `Accounts` | MCAS compromise detection overlaps active incident entities | Escalate to 🔴 |
+| MFA registration from spray target | Q10 `MFA-Registration` ∩ Q4 spray targets | Attacker completing MFA enrollment after successful spray — T1556.006 | Escalate to 🔴 |
+| MFA registration from risky user | Q10 `MFA-Registration` ∩ Q3 `AccountUpn` | Risky user registering new auth methods — potential credential takeover | Escalate to 🔴 |
+| App registration + SPN drift | Q10 `AppRegistration` ∩ Q5 SPN drift | New app + expanding SPN footprint = T1098.001 app-based persistence | Escalate to 🔴 |
+| CA policy change + spray/compromise activity | Q9 `Conditional Access Change` + Q4 or Q9 `Compromised Sign-In` | Defense weakened during active attack | Escalate to 🔴 |
+| Mailbox Read (API) user has inbox rule changes | Q9 `Mailbox Read (API)` ∩ Q9 `Exchange Admin/Rule Change` | Programmatic read + forwarding rule = full exfiltration chain (T1114.003) | Escalate to 🔴 |
 
 ---
 
