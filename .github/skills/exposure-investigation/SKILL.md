@@ -46,6 +46,15 @@ This skill generates a comprehensive **Vulnerability & Exposure Management Repor
 9. **[Known Pitfalls](#known-pitfalls)** - Edge cases
 10. **[Error Handling](#error-handling)** - Troubleshooting guide
 
+**Investigation shortcuts:**
+- **Specific CVE assessment** (TP Q12): **Q2** (exploitable CVEs + KB details) → **Q5** (per-device vuln counts, scoped) → **Q14** (top vulnerable software) → **Q17/Q18** (file evidence drill-down)
+- **Internet-facing critical asset exposure** (TP Q11): **Q7** (critical asset inventory) → **Q15** (internet-facing + vulns) → **Q10a** (vulnerable device summary) → **Q10b** (blast radius edges) → **Q16** (multi-hop attack paths, optional)
+- **Per-device vulnerability review** (TP Q12, TP Q1): **Q5** (per-device vuln counts) → **Q6** (per-device compliance) → **Q8** (high-impact misconfigs) → **Q13** (certificates)
+- **Fleet-wide posture report** (standalone): **Q1** (severity dist) → **Q2** (exploitable) → **Q3** (config compliance) → **Q4** (EoS software) → **Q7** (critical assets) → **Q9** (Defender health)
+- **Defender health audit** (TP Q11, standalone): **Q9** (fleet summary by control×OS) → **Q11** (non-compliant exceptions, active only) → **Q6** (per-device compliance scorecard)
+- **Attack path analysis** (TP Q11+Q12): **Q10a** (vulnerable device exposure) → **Q10b** (1-hop blast radius) → **Q15** (internet-facing critical + vulns) → **Q16** (multi-hop paths, optional)
+- **Software version sprawl** (after Q14 or Q2): **Q14** (top vulnerable software) → **Q17** (version sprawl by source) → **Q18** (CVE to file mapping) → **Q19** (stale extension folders)
+
 ---
 
 ## ⚠️ CRITICAL WORKFLOW RULES - READ FIRST ⚠️
@@ -60,7 +69,7 @@ This skill generates a comprehensive **Vulnerability & Exposure Management Repor
 6. **ALWAYS use `create_file` for markdown reports** (NEVER use PowerShell terminal commands)
 7. **ALWAYS sanitize PII** from saved reports — use generic placeholders for real hostnames, tenant names, and UPNs in committed files (reports/ files for user's own use may contain real values)
 8. **ExposureGraph tables are snapshot data** — no `Timestamp` or `TimeGenerated` filter needed
-9. **DeviceTvm tables use `Timestamp`** — filter with `Timestamp > ago(1d)` for latest assessment snapshot
+9. **DeviceTvm assessment tables** — use `summarize arg_max(Timestamp, *) by DeviceId, ConfigurationId` to get the latest assessment per device×config. Do NOT use `Timestamp > ago(1d)` as a pre-filter — lab/weekend environments may have stale data and return 0 results
 
 ### Tool Selection
 
@@ -75,6 +84,12 @@ This skill generates a comprehensive **Vulnerability & Exposure Management Repor
 - ❌ Adding `TimeGenerated` filters to ExposureGraph queries
 - ❌ Reporting findings without actual query evidence
 - ❌ Fabricating CVE IDs, CVSS scores, or device names
+
+### When invoked from a parent skill (threat-pulse, incident-investigation, etc.)
+- **Skip output mode and scope prompts** — the parent skill controls output format
+- **Use the investigation shortcut** that matches the parent trigger (see shortcuts above the TOC)
+- For quick triage: run only the shortcut query chain
+- For deep investigation: run the full phased workflow
 
 ---
 
@@ -212,7 +227,7 @@ DeviceTvmSoftwareVulnerabilities
 
 ```kql
 DeviceTvmSecureConfigurationAssessment
-| where Timestamp > ago(1d)
+| summarize arg_max(Timestamp, *) by DeviceId, ConfigurationId
 | summarize 
     TotalAssessments = count(),
     CompliantCount = countif(IsCompliant == true),
@@ -269,7 +284,7 @@ DeviceTvmSoftwareVulnerabilities
 
 ```kql
 DeviceTvmSecureConfigurationAssessment
-| where Timestamp > ago(1d)
+| summarize arg_max(Timestamp, *) by DeviceId, ConfigurationId
 | summarize 
     TotalChecks = count(),
     Compliant = countif(IsCompliant == true),
@@ -329,7 +344,7 @@ ExposureGraphNodes
 
 ```kql
 DeviceTvmSecureConfigurationAssessment
-| where Timestamp > ago(1d)
+| summarize arg_max(Timestamp, *) by DeviceId, ConfigurationId
 | where IsCompliant == false and IsApplicable == true
 | summarize AffectedDevices = dcount(DeviceId), DeviceList = make_set(DeviceName) by ConfigurationId
 | join kind=inner DeviceTvmSecureConfigurationAssessmentKB on ConfigurationId
@@ -1075,11 +1090,12 @@ When user specifies a device name, scope all DeviceTvm queries to that device:
 | `DeviceTvmCertificateInfo` requires Defender VM add-on | Query returns empty or error | Skip gracefully, note in report: "Certificate data requires Defender Vulnerability Management add-on" |
 | `DeviceTvmBrowserExtensions` may be empty | No browser extension data | Skip section, note as "No browser extension data available" |
 
-| `DeviceTvmSoftwareVulnerabilitiesKB` has a narrow schema | Ad-hoc `project` using non-existent columns (`CveDescription`, `ExploitTypes`, `IsExploitVerified`, `LastModifiedDate`) returns `Failed to resolve scalar expression` | Only project verified columns: `CveId`, `CvssScore`, `VulnerabilitySeverityLevel`, `IsExploitAvailable`, `PublishedDate`, `RecommendedSecurityUpdate`, `RecommendedSecurityUpdateId`. Use `getschema` before adding ad-hoc columns. Stick to skill queries — do NOT improvise projections |
+| `DeviceTvmSoftwareVulnerabilitiesKB` has a specific schema | Ad-hoc `project` using non-existent columns (`CveDescription`, `ExploitTypes`, `ExploitVerified`, `IsExploitVerified`, `RecommendedSecurityUpdate`, `RecommendedSecurityUpdateId`) returns `Failed to resolve scalar expression` | **Verified columns (via `getschema`):** `CveId`, `CvssScore`, `CvssVector`, `CveSupportability`, `IsExploitAvailable` (bool), `VulnerabilitySeverityLevel`, `LastModifiedTime`, `PublishedDate`, `VulnerabilityDescription`, `AffectedSoftware` (dynamic), `EpssScore` (real). There are NO columns named `ExploitTypes`, `ExploitVerified`, `RecommendedSecurityUpdate`, or `RecommendedSecurityUpdateId`. Those exist on `DeviceTvmSoftwareVulnerabilities` (the main table), not the KB. Use `getschema` before adding ad-hoc columns. Stick to skill queries — do NOT improvise projections |
 | `RemediationOptions` in KB tables contains HTML | Raw HTML in output | Strip HTML tags when rendering in markdown: remove `<br/>`, `<ol>`, `<li>`, `<a>` tags, convert to plain text bullet points |
 | `NodeProperties` is a JSON string, NOT a parsed dynamic object | Direct dot-notation like `NodeProperties.rawData.criticalityLevel` returns null through MCP JSON serialization — queries silently return 0 results | **MUST** use double `parse_json(tostring())` extraction: `parse_json(tostring(parse_json(tostring(NodeProperties)).rawData))` then access sub-properties. This is the ONLY reliable pattern for `NodeProperties` access. See Q7, Q10a, Q10b, Q15, Q16 for canonical examples |
 | `ConfigurationBenchmarks` in KB contains benchmark mappings | Can enrich report | Optional: extract CIS/NIST benchmark references for compliance mapping |
 | DeviceTvm assessments refresh periodically | Data may be 12-24h old | Note data freshness in report appendix |
+| `DeviceTvmSecureConfigurationAssessment` with `Timestamp > ago(1d)` returns 0 results | Lab, weekend, and low-activity environments may not have assessments in the last 24h. The `ago(1d)` filter silently drops all data — the #1 cause of empty Q3/Q6/Q8 results | **NEVER** use `Timestamp > ago(1d)` as a pre-filter. Use `summarize arg_max(Timestamp, *) by DeviceId, ConfigurationId` to dedup to the latest assessment per device×config without a time floor. Q9 and Q11 already use this pattern correctly |
 | `graph-match` queries can be slow on large graphs | Timeout possible | Filter nodes BEFORE `make-graph` to reduce graph size |
 | `parse_json()` and `graph-match project` produce dynamic-typed columns | `order by` fails with "key can't be of dynamic type" error | Always wrap in explicit type casts (`toint()`, `tostring()`, `tolong()`) before using in `order by`, `summarize`, or comparisons. Applies to ALL `parse_json()` output — not just `graph-match`. Example: `| extend critValue = toint(rawData.criticalityLevel.criticalityLevel)` then `| order by critValue asc` |
 | `DeviceTvmInfoGathering` table exists but is NOT used by this skill | Agent may attempt to query it for Defender health data, causing errors due to unfamiliar schema | Defender sensor health is covered by Q9 (SCIDs in `DeviceTvmSecureConfigurationAssessment`). Do NOT improvise queries against `DeviceTvmInfoGathering` — its schema differs from other DeviceTvm* tables and is not documented here |
