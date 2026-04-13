@@ -32,7 +32,7 @@ The investigation correlates IoCs with Microsoft Defender Threat Intelligence, i
 
 **Investigation shortcuts:**
 - **Suspicious IP from spray/brute-force** (TP Q4): **Q2** (network connections) → **Q11** (sign-in analysis) → **Q8** (alert evidence) → **Q1** (TI match)
-- **IP from user risk event** (TP Q2): **Q11** (sign-in analysis) → **Q2** (device connections) → **Q9** (security alerts) → `enrich_ips.py`
+- **IP from user risk event** (TP Q3): **Q11** (sign-in analysis) → **Q2** (device connections) → **Q9** (security alerts) → `enrich_ips.py`
 - **Phishing domain/URL** (TP Q8): **Q4** (DNS/HTTP connections) → **Q6** (email delivery) → **Q8** (alert evidence) → **Q1** (TI match)
 - **File hash from incident** (TP Q1): **Q7** (file events across all tables) → **Q9** (security alerts) → **Q10** (custom indicator check) → **Q12** (CVE extraction)
 - **IoC organizational exposure** (TP Q1+Q11): **Q2/Q4** (affected devices) → **Q9** (alert correlation) → **Q12** (CVEs from alerts)

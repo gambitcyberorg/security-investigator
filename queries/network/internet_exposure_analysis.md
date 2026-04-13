@@ -36,7 +36,7 @@ Combines three tiers of internet exposure intelligence to identify, validate, an
 
 **CRITICAL:** Filtering `RemoteIPType == "Public"` misses connections to services using IPv4-mapped IPv6 sockets (e.g., IIS dual-stack listeners). When IIS accepts an IPv4 connection through its `::ffff:` binding, MDE classifies `RemoteIPType` as `FourToSixMapping` — even though the source IP is a public internet address. This means **queries filtering only on `"Public"` will report 0 inbound web connections** while `W3CIISLog` shows hundreds of requests from the same IPs on the same port.
 
-**Fix:** When querying environments with IIS dual-stack listeners (or any IPv4-mapped IPv6 sockets), add `FourToSixMapping` to the filter: `RemoteIPType in ("Public", "FourToSixMapping")`. Alternatively, use RFC1918 exclusion filters (as in `queries/endpoint/endpoint_failed_connections.md` Query 2) which catch all non-private IPs regardless of MDE's type classification. The queries below use `RemoteIPType == "Public"` for simplicity — add `FourToSixMapping` if your environment uses dual-stack web services.
+**Fix:** All queries in this file use the inclusive filter `RemoteIPType in ("Public", "FourToSixMapping")` by default to avoid silently missing dual-stack web traffic. Alternatively, use RFC1918 exclusion filters (as in `queries/endpoint/endpoint_failed_connections.md` Query 2) which catch all non-private IPs regardless of MDE's type classification.
 
 ### Key ActionTypes in DeviceNetworkEvents
 
@@ -52,10 +52,12 @@ Combines three tiers of internet exposure intelligence to identify, validate, an
 ## Quick Reference — Query Index
 
 **Investigation shortcuts:**
-- **Internet-facing device with RDP exposed** (TP Q11, Q4): **Q1** (which devices) → **Q7** (RDP cadence + top attackers) → **Q6** (source IP enrichment)
-- **Critical asset exposure posture** (TP Q11): **Q1** (authoritative list) + **Q4** (inbound volumes) + **Q5** (port breakdown)
+- **Internet-facing device with RDP exposed** (TP Q11, Q4): **Q1** (which devices — authoritative) → **Q7** (RDP cadence + top attackers) → **Q6** (source IP enrichment)
+- **Critical asset exposure posture** (TP Q11): **Q1** (authoritative internet exposure list) + **Q4** (all inbound traffic — includes Azure infra, not just internet) + **Q5** (port breakdown — same caveat)
 - **Scanning/probing against exposed device** (TP Q11, Q4): **Q8** (failed connections) → **Q6** (top attackers) → **Q12** (specific port hunt)
 - **Full exposure validation for incident device** (TP Q1): **Q1** (MDE confirmed) + **Q2** (ExposureGraph topology) + **Q11** (cross-reference rules vs traffic)
+
+> **⚠️ Inbound traffic ≠ Internet exposure.** Q4–Q8 show connections from non-private IPs, which includes Azure management plane, VPN/hybrid-join clients, and backbone traffic — not just public internet. **Always start with Q1 (`DeviceInfo.IsInternetFacing`)** for the authoritative list of truly internet-exposed devices. Use Q4–Q8 for visibility into all allowed inbound traffic patterns, then cross-reference with Q1 to distinguish internet attacks from expected Azure infrastructure traffic.
 
 | # | Query | Use Case | Key Table |
 |---|-------|----------|-----------|
@@ -234,7 +236,7 @@ ExposureGraphEdges
 
 ## Query 4: Inbound Connections Accepted — Device Ranking
 
-Confirms exposure by showing which devices are actually receiving inbound connections from public IPs, ranked by volume and source IP diversity.
+Shows which devices are receiving inbound connections from non-private IPs, ranked by volume and source IP diversity. **This is Tier 3 (Observed) data — it does NOT confirm internet exposure.** Inbound traffic from non-RFC1918 IPs includes Azure management plane, VPN/hybrid-join traffic, and other legitimate Azure backbone sources. Cross-reference with **Query 1 (DeviceInfo.IsInternetFacing)** to distinguish genuine internet exposure from expected Azure infrastructure traffic. High unique-IP counts with low-IP-count ports (e.g., SMB/Kerberos on DCs from 5–7 IPs) typically indicate Azure AD hybrid-join or management traffic, not internet exposure.
 
 <!-- cd-metadata
 cd_ready: true
@@ -254,7 +256,7 @@ let lookback = 7d;
 DeviceNetworkEvents
 | where Timestamp > ago(lookback)
 | where ActionType == "InboundConnectionAccepted"
-| where RemoteIPType == "Public"
+| where RemoteIPType in ("Public", "FourToSixMapping")
 | summarize 
     InboundConnections = count(),
     UniqueSourceIPs = dcount(RemoteIP),
@@ -270,7 +272,7 @@ DeviceNetworkEvents
 
 ## Query 5: Inbound Connections by Port
 
-Shows which ports are receiving the most inbound traffic from the internet — identifies the highest-risk services.
+Shows which ports are receiving the most inbound traffic from non-private IPs — useful for identifying both exposed services AND expected Azure infrastructure ports. **Not all ports receiving traffic are internet-exposed.** Ports like 445 (SMB), 88 (Kerberos), and 443 (HTTPS) on domain controllers often receive traffic from Azure management IPs, VPN concentrators, or hybrid-join clients — not from the public internet. Use Query 1 (`DeviceInfo.IsInternetFacing`) as the authoritative internet exposure source; use this query for visibility into all allowed inbound traffic patterns.
 
 <!-- cd-metadata
 cd_ready: false
@@ -283,7 +285,7 @@ let lookback = 7d;
 DeviceNetworkEvents
 | where Timestamp > ago(lookback)
 | where ActionType == "InboundConnectionAccepted"
-| where RemoteIPType == "Public"
+| where RemoteIPType in ("Public", "FourToSixMapping")
 | summarize 
     Connections = count(),
     UniqueSourceIPs = dcount(RemoteIP),
@@ -332,7 +334,7 @@ let lookback = 7d;
 DeviceNetworkEvents
 | where Timestamp > ago(lookback)
 | where ActionType == "InboundConnectionAccepted"
-| where RemoteIPType == "Public"
+| where RemoteIPType in ("Public", "FourToSixMapping")
 | summarize 
     Connections = count(),
     TargetDevices = make_set(DeviceName, 10),
@@ -370,7 +372,7 @@ let lookback = 7d;
 DeviceNetworkEvents
 | where Timestamp > ago(lookback)
 | where ActionType == "InboundConnectionAccepted"
-| where RemoteIPType == "Public"
+| where RemoteIPType in ("Public", "FourToSixMapping")
 | where LocalPort == 3389
 | summarize Connections = count() by bin(Timestamp, 1h), DeviceName
 | order by Timestamp desc
@@ -382,7 +384,7 @@ let lookback = 7d;
 DeviceNetworkEvents
 | where Timestamp > ago(lookback)
 | where ActionType == "InboundConnectionAccepted"
-| where RemoteIPType == "Public"
+| where RemoteIPType in ("Public", "FourToSixMapping")
 | where LocalPort == 3389
 | summarize 
     Hits = count(),
@@ -417,7 +419,7 @@ let lookback = 7d;
 DeviceNetworkEvents
 | where Timestamp > ago(lookback)
 | where ActionType == "ConnectionFailed"
-| where RemoteIPType == "Public"
+| where RemoteIPType in ("Public", "FourToSixMapping")
 | summarize 
     Failures = count(),
     UniqueSourceIPs = dcount(RemoteIP),
@@ -540,7 +542,7 @@ let ExposedDevices = ExposureGraphNodes
 let ObservedInbound = DeviceNetworkEvents
 | where Timestamp > ago(7d)
 | where ActionType == "InboundConnectionAccepted"
-| where RemoteIPType == "Public"
+| where RemoteIPType in ("Public", "FourToSixMapping")
 | summarize 
     InboundCount = count(),
     UniqueIPs = dcount(RemoteIP),
@@ -586,7 +588,7 @@ let lookback = 30d;
 DeviceNetworkEvents
 | where Timestamp > ago(lookback)
 | where ActionType in ("InboundConnectionAccepted", "ConnectionAttempt", "ConnectionFailed")
-| where RemoteIPType == "Public"
+| where RemoteIPType in ("Public", "FourToSixMapping")
 | where LocalPort == targetPort
 | summarize 
     Accepted = countif(ActionType == "InboundConnectionAccepted"),

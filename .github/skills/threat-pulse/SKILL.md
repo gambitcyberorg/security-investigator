@@ -37,6 +37,8 @@ The Threat Pulse skill is a rapid, broad-spectrum security scan designed for the
 | `DOCS_TVM` | `https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-devicetvmsoftwarevulnerabilities-table` |
 | `DOCS_EMAIL_EVENTS` | `https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-emailevents-table` |
 | `DOCS_CLOUD_APP_EVENTS` | `https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-cloudappevents-table` |
+| `XDR_NHI_INVENTORY` | `https://security.microsoft.com/identity-inventory?tab=NonHumanIdentities` |
+| `DOCS_NHI_INVESTIGATION` | `https://learn.microsoft.com/en-us/defender-xdr/investigate-non-human-identities` |
 
 Incidents: `XDR_INCIDENT_BASE` + `ProviderIncidentId`.
 
@@ -68,7 +70,7 @@ Incidents: `XDR_INCIDENT_BASE` + `ProviderIncidentId`.
 
 4. **⛔ MANDATORY: Evidence-based analysis only** — Every finding must cite query results. Every "clear" verdict must cite 0 results. Follow the Evidence-Based Analysis rule from `copilot-instructions.md`.
 
-5. **Parallel execution** — Run the Data Lake query (Q5) and all Advanced Hunting queries (Q1, Q1b, Q2, Q4, Q6, Q7, Q8, Q9, Q10, Q11, Q12) simultaneously.
+5. **Parallel execution** — Run the Data Lake query (Q5) and all Advanced Hunting queries (Q1, Q2, Q3, Q4, Q6, Q7, Q8, Q9, Q10, Q11, Q12) simultaneously.
 
 6. **Cross-query correlation** — After all queries complete, check for correlated findings per the [Cross-Query Correlation](#cross-query-correlation) table in Post-Processing. Escalate priority when patterns match.
 
@@ -103,8 +105,8 @@ Lookback: <N>d (user-selected or default 7d)
 Output: <Inline / Markdown file / Both>
 
 Executing 12 queries across 7 domains:
-  🔴 Incidents      — Open high-severity + 7d closed summary (Q1, Q1b)
-  🔐 Identity       — Identity risk posture, risk event enrichment, auth spray (Q2, Q4)
+  🔴 Incidents      — Open high-severity + 7d closed summary (Q1, Q2)
+  🔐 Identity       — Identity risk posture, risk event enrichment, auth spray (Q3, Q4)
   🤖 NonHuman ID    — Service principal behavioral drift (Q5)
   💻 Endpoint       — Device process drift, rare process chains (Q6, Q7)
   📧 Email          — Inbound threat snapshot (Q8)
@@ -123,7 +125,7 @@ Estimated time: ~2–4 minutes
 |-------|--------|---------|------|
 | Q5 | 🤖 Identity (NonHuman) | Service principal behavioral drift (90d vs 7d) | `query_lake` |
 
-### Phase 2: Advanced Hunting Queries (Q1, Q1b, Q2, Q4, Q6, Q7, Q8, Q9, Q10, Q11, Q12)
+### Phase 2: Advanced Hunting Queries (Q1, Q2, Q3, Q4, Q6, Q7, Q8, Q9, Q10, Q11, Q12)
 
 **Run all 11 in parallel — no dependencies between queries.**
 
@@ -132,8 +134,8 @@ Estimated time: ~2–4 minutes
 | Query | Domain | Purpose | Tool |
 |-------|--------|---------|------|
 | Q1 | 🔴 Incidents | Open High/Critical incidents with MITRE tactics | `RunAdvancedHuntingQuery` |
-| Q1b | 🔴 Incidents | 7-day closed incident summary (classification, MITRE, severity) | `RunAdvancedHuntingQuery` |
-| Q2 | 🔐 Identity (Human) | Identity risk posture (IdentityInfo) + risk event enrichment (AADUserRiskEvents) | `RunAdvancedHuntingQuery` |
+| Q2 | 🔴 Incidents | 7-day closed incident summary (classification, MITRE, severity) | `RunAdvancedHuntingQuery` |
+| Q3 | 🔐 Identity (Human) | Identity risk posture (IdentityInfo) + risk event enrichment (AADUserRiskEvents) | `RunAdvancedHuntingQuery` |
 | Q4 | 🔐 Identity (Human) | Password spray / brute-force across Entra ID + RDP/SSH | `RunAdvancedHuntingQuery` |
 | Q6 | 💻 Endpoint | Fleet device process drift (7d baseline vs 1d) | `RunAdvancedHuntingQuery` |
 | Q7 | 💻 Endpoint | Rare process chain singletons (30d) | `RunAdvancedHuntingQuery` |
@@ -170,15 +172,21 @@ Estimated time: ~2–4 minutes
 
 **Skill matching rules — derive from findings:**
 
-| Finding Type | Skill | Prompt Pattern |
-|-------------|-------|---------------|
-| Username/UPN in Q2–Q4, Q9, Q10 | `user-investigation` | `Investigate <UPN>` |
-| IP address in Q4 (spray source) | `ioc-investigation` | `Investigate IP <address>` |
-| SPN in Q5 | `scope-drift-detection/spn` | `Analyze drift for <SPN>` |
-| Device in Q6, Q7, Q11, Q12 | `computer-investigation` | `Investigate device <hostname>` |
-| Email threats in Q8 | `email-threat-posture` | `Run email threat posture report` |
-| CVE in Q12 | `exposure-investigation` | `Run vulnerability report for <CVE>` |
-| Incident in Q1 | `incident-investigation` | `Investigate incident <ProviderIncidentId>` |
+| Query | Trigger | Skill | Prompt |
+|:-----:|---------|-------|--------|
+| Q1 | Incident surfaced | `incident-investigation` | `Investigate incident <ProviderIncidentId>` |
+| Q3–Q4 | Username/UPN in findings | `user-investigation` | `Investigate <UPN>` |
+| Q3 | 3+ risky users, or any ConfirmedCompromised | `identity-posture` | `Run identity posture report` |
+| Q3+Q4 | 🟡-only identity verdicts (no 🔴/🟠) | `identity-posture` | `Run identity posture report` |
+| Q4 | Spray source IP | `ioc-investigation` | `Investigate IP <address>` |
+| Q4 | Spray targeting 5+ users | `identity-posture` | `Run identity posture report` |
+| Q5 | SPN with drift | `scope-drift-detection/spn` | `Analyze drift for <SPN>` |
+| Q6–Q7 | Device in findings | `computer-investigation` | `Investigate device <hostname>` |
+| Q8 | Phishing delivered or malware detected | `email-threat-posture` | `Run email threat posture report` |
+| Q9–Q10 | Username/UPN in findings | `user-investigation` | `Investigate <UPN>` |
+| Q10 | Bulk credential/password ops from single actor | `identity-posture` | `Run identity posture report` |
+| Q11–Q12 | Device in findings | `computer-investigation` | `Investigate device <hostname>` |
+| Q12 | CVE with fleet impact | `exposure-investigation` | `Run vulnerability report for <CVE>` |
 
 #### ⛔ MANDATORY: 30d Drill-Down Lookback
 
@@ -193,7 +201,7 @@ For query file prompts, substitute `ago(7d)` with `ago(30d)`. For Data Lake quer
 
 **Procedure:**
 1. Build the **initial prompt pool** by combining:
-   - Skill prompts: one per unique entity + matching skill from the table above. If the same entity appears in multiple queries (e.g., Q2 and Q9), create ONE skill prompt for that entity — the correlation context goes in the Description, not in the Label.
+   - Skill prompts: one per unique entity + matching skill from the table above. If the same entity appears in multiple queries (e.g., Q3 and Q9), create ONE skill prompt for that entity — the correlation context goes in the Description, not in the Label.
    - Query file prompts: from Phase 3 step 5 keyword extraction. Each query file is its OWN separate prompt — never merge a query file prompt with a skill prompt.
    - IOC prompts: any suspicious IPs/domains from non-✅ findings not already covered by a skill prompt
    - Deduplicate: if a skill prompt and IOC prompt target the same entity, keep only the skill prompt
@@ -208,7 +216,7 @@ For query file prompts, substitute `ago(7d)` with `ago(30d)`. For Data Lake quer
    - **Question:** `Select an action to launch (or skip):`
    - **Options:** One per prompt — each option is exactly ONE atomic action (one skill + one entity, or one query file + one hunt). Cross-query correlation context goes in the Description, never in the Label.
      - **Label format:** `<ONE icon> <ONE action>` — nothing else. Examples: `🔍 Investigate user jsmith@contoso.com`, `📄 Hunt delivered phishing emails`, `🎯 Investigate IP 203.0.113.42`
-     - **Description format:** `Q<N>: <finding summary> → <ONE skill or query file>` (correlation context like `Q2+Q9:` is fine here — it explains WHY, not WHAT to do)
+     - **Description format:** `Q<N>: <finding summary> → <ONE skill or query file>` (correlation context like `Q3+Q9:` is fine here — it explains WHY, not WHAT to do)
      - **🔴 HARD RULE:** If you find yourself writing a comma or a second icon in a Label, STOP — you are bundling. Split into two options.
    - Penultimate option: **Label:** `💾 Save full investigation report` / **Description:** `Save the complete Threat Pulse session (scan + all drill-downs) as a markdown file`
    - Final option: **Label:** `Skip` / **Description:** `No follow-up — investigation complete`
@@ -219,7 +227,7 @@ For query file prompts, substitute `ago(7d)` with `ago(30d)`. For Data Lake quer
    b. Otherwise, read `/memories/session/threat-pulse-drilldowns.md` to recover all accumulated drill-down findings (critical after context compaction)
    c. Compile the complete session — original Threat Pulse dashboard + all drill-down investigation results — into a single markdown file using the [Markdown File Report Template](#markdown-file-report-template)
    d. Save to `reports/threat-pulse/Threat_Pulse_YYYYMMDD_HHMMSS.md`
-   d. **Weave drill-down insights into the main report** — do NOT simply append raw drill-down output. See the [Markdown File Report Template](#markdown-file-report-template) for the exact structure, including the `## Drill-Down Investigation Results` section format and the `## Cross-Investigation Correlation` section.
+   e. **Weave drill-down insights into the main report** — do NOT simply append raw drill-down output. See the [Markdown File Report Template](#markdown-file-report-template) for the exact structure, including the `## Drill-Down Investigation Results` section format and the `## Cross-Investigation Correlation` section.
    e. Remove the save option from the pool (report already saved). If no other actions were selected alongside it, **end the loop** — the investigation is complete. Otherwise continue to step 5 with the remaining selections.
 5. If user selects one or more actions:
    a. Build a **todo list** with one item per selected action, all `not-started`
@@ -251,18 +259,18 @@ For query file prompts, substitute `ago(7d)` with `ago(30d)`. For Data Lake quer
 - New evidence prompts are prepended (freshest leads first), tagged `🆕`
 - Loop ends when user selects Skip or pool empties (`✅ All follow-up actions completed.`)
 - **🔴 PROHIBITED:** Rendering the prompt pool as a markdown table, numbered list, or plain text instead of calling `vscode_askQuestions`. Every iteration — including after the first follow-up completes — MUST use the interactive question tool so options are clickable. This is the #1 loop-breaking mistake.
-- **🔴 ATOMIC OPTIONS — ONE action per selectable item.** Each option Label MUST contain exactly ONE icon (🔍, 📄, or 🎯) and map to exactly ONE executable action: one skill + one entity, OR one query file + one hunt prompt. When cross-query correlations link multiple findings (e.g., Q2+Q9 correlating a user with both risky identity and inbox rule manipulation), generate **separate options** for each distinct action — do NOT bundle them into a single option. Note the correlation in the **Description** field to preserve context, but keep the Label and action singular.
+- **🔴 ATOMIC OPTIONS — ONE action per selectable item.** Each option Label MUST contain exactly ONE icon (🔍, 📄, or 🎯) and map to exactly ONE executable action: one skill + one entity, OR one query file + one hunt prompt. When cross-query correlations link multiple findings (e.g., Q3+Q9 correlating a user with both risky identity and inbox rule manipulation), generate **separate options** for each distinct action — do NOT bundle them into a single option. Note the correlation in the **Description** field to preserve context, but keep the Label and action singular.
 
   **Self-check before presenting:** For each option, verify: (1) the Label has exactly ONE icon prefix, (2) there is NO comma separating a second action, (3) the Description has exactly ONE `→` pointing to ONE skill or query file. If any check fails, split the option.
 
   **❌ PROHIBITED — bundled multi-action option (this is the #1 follow-up mistake):**
-  `🔍 Investigate user cameron@contoso.com - Q2+Q9: mcasSuspiciousInboxManipulationRules + anonymizedIPAddress (5 high) + New-InboxRule creation — potential email exfiltration → user-investigation, 📄 Hunt delivered phishing emails → queries/email/email_threat_detection.md`
+  `🔍 Investigate user cameron@contoso.com - Q3+Q9: mcasSuspiciousInboxManipulationRules + anonymizedIPAddress (5 high) + New-InboxRule creation — potential email exfiltration → user-investigation, 📄 Hunt delivered phishing emails → queries/email/email_threat_detection.md`
 
   **❌ ALSO PROHIBITED — multiple skills/query files in Description:**
-  Description: `Q2+Q9: ... → user-investigation, queries/email/email_threat_detection.md`
+  Description: `Q3+Q9: ... → user-investigation, queries/email/email_threat_detection.md`
 
   **✅ CORRECT — one action per option, correlation context in Description only:**
-  - Option 1 — Label: `🔍 Investigate user cameron@contoso.com` / Description: `Q2+Q9: Identity risk (AtRisk, aiCompoundAccountRisk + anonymizedIPAddress) + inbox rule manipulation — potential email exfiltration → user-investigation`
+  - Option 1 — Label: `🔍 Investigate user cameron@contoso.com` / Description: `Q3+Q9: Identity risk (AtRisk, aiCompoundAccountRisk + anonymizedIPAddress) + inbox rule manipulation — potential email exfiltration → user-investigation`
   - Option 2 — Label: `📄 Hunt delivered phishing emails and recipients` / Description: `Q8: Trace the 4 delivered phishing emails → queries/email/email_threat_detection.md`
 
 ### 📄 Query File Execution Rule
@@ -271,7 +279,7 @@ For query file prompts, substitute `ago(7d)` with `ago(30d)`. For Data Lake quer
 
 When executing a `📄` prompt, use the queries **from the file verbatim** with entity substitution. Do NOT rewrite queries against different tables than the file specifies.
 
-1. Read the query file and select the relevant queries for the hunt
+1. Read the query file and check its **Investigation shortcuts** section at the top — match the `(TP Q#)` annotation to the triggering Threat Pulse query to identify the recommended query chain. Follow that chain for the hunt
 2. Substitute entity values (hostnames, IPs, UPNs) and adjust `ago(Nd)` lookback if context-aware expansion applies
 3. **⚠️ Hostname-safe substitution:** Device names vary across tables (short hostname vs FQDN vs uppercase). NEVER use `==` for device/computer filters — use `startswith` (default, case-insensitive, matches both short name and FQDN), or `in~` (multi-device). Override `==` in query file entity substitution notes with `startswith`.
 4. Execute using the file's exact tables, columns, and filters
@@ -403,6 +411,7 @@ DeviceFileEvents
 | **IP** | `https://security.microsoft.com/ip/<IP>/overview` | `[<IP>](https://security.microsoft.com/ip/<IP>/overview)` |
 | **File Hash** | `https://security.microsoft.com/file/<SHA1-or-SHA256>/` | `[da5e459...b1bb1e](https://security.microsoft.com/file/da5e45915354850261cf0e87dc7af19597b1bb1e/)` |
 | **Device** | `https://security.microsoft.com/machines/v2/<MDE_DeviceId>` | `[alpine-srv1](https://security.microsoft.com/machines/v2/6b02befec5724a3b79184d006ac417eda6fb05a6)` |
+| **SPN / Non-Human Identity** | `https://security.microsoft.com/identity-inventory?tab=NonHumanIdentities` | `[Non-Human Identities Inventory](https://security.microsoft.com/identity-inventory?tab=NonHumanIdentities)` |
 
 **User fallbacks:** `?upn=<UPN>` when ObjectId is unavailable; `?sid=<SID>&accountName=<Name>&accountDomain=<Domain>` for on-prem AD.
 
@@ -526,7 +535,7 @@ SecurityIncident
 | take 10
 ```
 
-**Purpose:** Identifies the top 10 newest open high-severity incidents, sorted by day (newest first) then by alert count (highest complexity first within each day). Joins SecurityAlert for MITRE tactic and technique ID visibility, plus extracts `Accounts` (UPNs or AAD ObjectIds) and `Devices` (hostnames) from alert entities for cross-query correlation with Q2 (identity risk), Q6/Q7 (endpoint drift/rare processes), Q4 (spray targets), and Q12 (CVE exposure). Extracts `Tags` from incident labels (both AutoAssigned ML classifications like `Credential Phish`, `BEC Fraud`, `Defender Experts` and User-applied SOC workflow tags). Flags unassigned incidents (empty OwnerUPN).
+**Purpose:** Identifies the top 10 newest open high-severity incidents, sorted by day (newest first) then by alert count (highest complexity first within each day). Joins SecurityAlert for MITRE tactic and technique ID visibility, plus extracts `Accounts` (UPNs or AAD ObjectIds) and `Devices` (hostnames) from alert entities for cross-query correlation with Q3 (identity risk), Q6/Q7 (endpoint drift/rare processes), Q4 (spray targets), and Q12 (CVE exposure). Extracts `Tags` from incident labels (both AutoAssigned ML classifications like `Credential Phish`, `BEC Fraud`, `Defender Experts` and User-applied SOC workflow tags). Flags unassigned incidents (empty OwnerUPN).
 
 **Sort logic:** `bin(CreatedTime, 1d) desc, AlertCount desc` — groups incidents by calendar day (newest day first), then ranks by correlated alert count within each day. This ensures the most complex recent incidents surface first, while older backlog naturally drops off.
 
@@ -542,11 +551,11 @@ SecurityIncident
 - 🔴 Escalate: 5+ new High/Critical incidents in 24h, or any incident with `AlertCount > 50`, or any unassigned incident with CredentialAccess/LateralMovement tactics
 - 🟠 Investigate: Any unassigned incident, or `AlertCount > 10`, or multiple incidents in <6h
 - 🟡 Monitor: Open incidents exist but are assigned and low alert count
-- ✅ Clear: 0 open High/Critical incidents (Q1b closed summary still renders as context)
+- ✅ Clear: 0 open High/Critical incidents (Q2 closed summary still renders as context)
 
 ---
 
-### Query 1b: Closed Incident Summary (7-Day Lookback)
+### Query 2: Closed Incident Summary (7-Day Lookback)
 
 🔴 **Threat landscape context** — Even when all incidents are resolved, the classification breakdown, MITRE tactic distribution, and severity mix from recent closures provide actionable signals for cross-correlation and query file recommendations.
 
@@ -588,7 +597,7 @@ SecurityIncident
 
 **Purpose:** Provides a 7-day closed incident summary with classification breakdown (TP/BP/FP/Undetermined), severity distribution, aggregated MITRE tactics, and aggregated MITRE technique IDs. Uses `CreatedTime` (not `TimeGenerated`) to match portal "created in last 7 days" semantics — `TimeGenerated` captures any incident *updated* in the window, inflating counts with old incidents. Filters `array_length(AlertIds) > 0` to exclude phantom incidents — the SecurityIncident table contains hundreds of records synced from XDR with empty AlertIds that never surface in the Defender XDR portal queue (see copilot-instructions.md Known Table Pitfalls). This data feeds three downstream uses:
 1. **TP rate signal** — High TruePositive ratio indicates an active threat environment
-2. **MITRE tactic context** — Tactics from closed TPs identify the current threat landscape for cross-correlation with Q2/Q7/Q8 findings
+2. **MITRE tactic context** — Tactics from closed TPs identify the current threat landscape for cross-correlation with Q3/Q7/Q8 findings
 3. **Manifest MITRE matching** — The `Techniques` array contains ATT&CK technique IDs (e.g., `T1566`, `T1078`, `T1059`) directly matchable against manifest entry `mitre` fields. No tactic→technique mapping needed — the technique IDs are the primary matching key for query file recommendations
 
 **Verdict logic:**
@@ -598,15 +607,15 @@ SecurityIncident
 - 🔵 Informational: 0 closed incidents in 7d
 
 **Rendering rules:**
-- **Always render** Q1b results in the report, regardless of Q1 verdict
-- Present as a compact summary block under the Q1 section (not a separate dashboard row)
+- **Always render** Q2 results in the report, regardless of Q1 verdict
+- In the Dashboard Summary, Q2 gets its own row. In Detailed Findings, render Q2 immediately after Q1 as a compact summary block
 - Flatten the `Tactics` and `Techniques` arrays and report distinct values from TruePositive incidents
 - The `Techniques` array feeds directly into the [Query File Recommendations](#query-file-recommendations) manifest MITRE matching (no tactic→technique translation needed)
 - If 0 closed incidents in 7d, display: "No incidents closed in the last 7 days"
 
 ---
 
-### Query 2: Identity Risk Posture & Risk Event Enrichment
+### Query 3: Identity Risk Posture & Risk Event Enrichment
 
 🔐 **Identity risk posture** — Two-layer query: `IdentityInfo` identifies users needing attention (High/Medium risk, AtRisk/ConfirmedCompromised, or high criticality), then `AADUserRiskEvents` enriches with the specific risk detections explaining *why* they're flagged. Covers both sign-in-level detections (e.g., `anonymizedIPAddress`, `unfamiliarFeatures`) AND user-level AI-driven signals (e.g., `aiCompoundAccountRisk`, `adminConfirmedUserCompromised`) that never appear in sign-in tables.
 
@@ -679,9 +688,11 @@ IdentityPosture
 - 🟡 Monitor: Only `Medium` risk users with low-severity risk event types (e.g., `unfamiliarFeatures`)
 - ✅ Clear: 0 users matching the IdentityInfo risk/criticality filter
 
----
+**⚠️ Risk Event Type Routing Guard (Phase 4 drill-down):**
+- `suspiciousAuthAppApproval` → **T1621 MFA Fatigue** (suspicious Authenticator push approval patterns), **NOT** OAuth app consent. Route to `user-investigation` or `authentication-tracing`. **NEVER** recommend `app-registration-posture` based on this risk event alone
+- `mcasSuspiciousInboxManipulationRules` → T1114.003 email exfiltration via inbox rules. Route to `user-investigation` with OfficeActivity drill-down
 
-> **Note:** Query numbering skips Q3 (removed in a prior revision). Numbers are preserved for backward compatibility with session memory, drill-down logs, and cross-references.
+---
 
 ### Query 4: Password Spray / Brute-Force Detection
 
@@ -1124,14 +1135,14 @@ After all queries complete, check these correlation patterns and escalate priori
 
 | Pattern | Queries | Implication | Action |
 |---------|---------|-------------|--------|
-| Incident account matches risky identity | Q1 `Accounts` ∩ Q2 `AccountUpn` | Incident involves user already flagged AtRisk/Compromised — corroborated signal | Escalate to 🔴 |
+| Incident account matches risky identity | Q1 `Accounts` ∩ Q3 `AccountUpn` | Incident involves user already flagged AtRisk/Compromised — corroborated signal | Escalate to 🔴 |
 | Incident device matches drifting endpoint | Q1 `Devices` ∩ Q6 `DeviceName` | Incident target has behavioral anomalies on endpoint | Escalate to 🔴 |
 | Incident device has exploitable CVE | Q1 `Devices` ∩ Q12 `DeviceName` | Incident device is vulnerable to active exploitation | Escalate to 🔴 |
 | Spray target already in incident | Q4 targets ∩ Q1 `Accounts` | Spray target is already involved in an active incident | Escalate to 🔴 |
 | SPN drift AND unusual credential/consent activity | Q5 + Q9 | App credential abuse / persistence | Escalate to 🔴 |
 | Device with rare process chain AND exploitable CVE | Q7 + Q12 | Potential active exploitation | Escalate to 🔴 |
-| Spray IP target already flagged as risky | Q4 + Q2 | Spray target has active Identity Protection risk | Escalate to 🔴 |
-| Closed TP tactics match active findings | Q1b + Q2/Q7/Q8 | Same attack pattern recurring despite recent closures | Escalate to 🟠, note recurrence |
+| Spray IP target already flagged as risky | Q4 + Q3 | Spray target has active Identity Protection risk | Escalate to 🔴 |
+| Closed TP tactics match active findings | Q2 + Q3/Q7/Q8 | Same attack pattern recurring despite recent closures | Escalate to 🟠, note recurrence |
 | Mailbox rule manipulation AND email threats | Q9 + Q8 | Potential email exfiltration setup following phishing | Escalate to 🔴 |
 
 ---
@@ -1148,8 +1159,8 @@ Each threat-pulse query group maps to a domain tag. Non-✅ domains drive manife
 
 | Query Group | Domain Tag |
 |-------------|-----------|
-| Q1, Q1b (Incidents) | `incidents` |
-| Q2, Q4 (Identity) | `identity` |
+| Q1, Q2 (Incidents) | `incidents` |
+| Q3, Q4 (Identity) | `identity` |
 | Q5 (SPN Drift) | `spn` |
 | Q6, Q7 (Endpoint) | `endpoint` |
 | Q8 (Email) | `email` |
@@ -1163,7 +1174,7 @@ Each threat-pulse query group maps to a domain tag. Non-✅ domains drive manife
 3. **Filter query files:** From `manifest.queries`, select entries where `domains` contains ANY of the active domain tags
 4. **Rank results (three-tier):**
    - **Primary:** Number of matching domain tags (multi-domain match ranks higher)
-   - **Secondary:** MITRE technique overlap — compare technique IDs from Q1/Q1b `Techniques` arrays (e.g., `T1566`, `T1078`) directly against the manifest entry's `mitre` field. Exact string match — no tactic-to-technique translation needed
+   - **Secondary:** MITRE technique overlap — compare technique IDs from Q1/Q2 `Techniques` arrays (e.g., `T1566`, `T1078`) directly against the manifest entry's `mitre` field. Exact string match — no tactic-to-technique translation needed
    - **Tertiary:** Keyword overlap — match entity names, process names, CVE IDs, or ActionTypes from findings against manifest entry titles and paths
 5. **Select top N:** 🔴/🟠 verdicts: 3–5 files. 🟡-only: 1–2 files
 6. **Format links:** Use the `title` and `path` from the manifest entry to build clickable links (see [Report Output Block](#report-output-block) below for format)
@@ -1212,21 +1223,21 @@ Insert `📂 Recommended Query Files` section after **Recommended Actions** in t
 **Report structure (all modes):**
 
 1. **Header:** `# 🔍 Threat Pulse — <Workspace> | <Date>` with workspace ID, scan duration, query count
-2. **Dashboard Summary:** 12-row table — one row per query (Q1, Q1b, Q2, Q4–Q12), columns: `#`, `Domain`, `Status` (verdict emoji), `Key Finding` (1-line). Verdicts: 🔴 Escalate | 🟠 Investigate | 🟡 Monitor | ✅ Clear | 🔵 Informational | ❓ No Data
-3. **Detailed Findings:** One section per query — EVERY query gets a section (no skipping). Data tables (max 10 rows inline, unlimited in file). Q1 incidents must include `[#<id>](https://security.microsoft.com/incidents/<ProviderIncidentId>)` links. Q1b closed summary always renders after Q1.
+2. **Dashboard Summary:** 12-row table — one row per query (Q1, Q2, Q3, Q4–Q12), columns: `#`, `Domain`, `Status` (verdict emoji), `Key Finding` (1-line). Verdicts: 🔴 Escalate | 🟠 Investigate | 🟡 Monitor | ✅ Clear | 🔵 Informational | ❓ No Data
+3. **Detailed Findings:** One section per query — EVERY query gets a section (no skipping). Data tables (max 10 rows inline, unlimited in file). Q1 incidents must include `[#<id>](https://security.microsoft.com/incidents/<ProviderIncidentId>)` links. Q2 closed summary always renders after Q1.
 4. **Cross-Query Correlations:** Table of correlated findings per Post-Processing rules, or `✅ No correlations detected`.
 5. **🎯 Recommended Actions:** Prioritized table with action, trigger query, and drill-down skill.
 6. **📂 Recommended Query Files:** Per the Report Output Block procedure above. For 🟡-only verdicts, use "📂 Proactive Hunting Suggestions" header instead. Omit entirely when all ✅.
 
 **Q1 column format:** `| Incident | Title | Age | Alerts | Owner | Tactics | Accounts | Devices | Tags |` — Unassigned shows `⚠️ Unassigned`. `Age` uses relative time from `AgeDisplay` (e.g., "3m ago", "2h ago", "1d ago"). `Accounts`, `Devices`, and `Tags` are entity/label arrays (max 5 each) — render inline as comma-separated values.
 
-**Q1b closed summary:** Classification breakdown table + severity + MITRE tactics/techniques from TP closures. Always render even when Q1 is ✅.
+**Q2 closed summary:** Classification breakdown table + severity + MITRE tactics/techniques from TP closures. Always render even when Q1 is ✅.
 
 **Zero results format:** `✅ No <type> detected in the last <N>d. Checked: <table> (0 matches)`
 
 **❓ No Data verdict:** Assigned when a query returns a table resolution error (table doesn't exist in workspace) or the query times out. Report the error message and the table that failed. Treat as an investigation gap — the domain is unmonitored.
 
-**🔵 Informational verdict:** Used by Q1b (0 closed incidents) and Q6 (DriftScore < 80, contracting activity). Maps to a neutral row in the Dashboard Summary — no action needed but context is included.
+**🔵 Informational verdict:** Used by Q2 (0 closed incidents) and Q6 (DriftScore < 80, contracting activity). Maps to a neutral row in the Dashboard Summary — no action needed but context is included.
 
 **Markdown file extras:** Full data tables (no row limits), full command-line samples, full CVE lists.
 
@@ -1257,7 +1268,7 @@ State the final risk posture incorporating all evidence gathered.>
 
 ## Dashboard Summary
 
-<Same 12-row verdict table as inline report — Q1, Q1b, Q2, Q4-Q12>
+<Same 12-row verdict table as inline report — Q1, Q2, Q3, Q4-Q12>
 
 ## Detailed Findings
 

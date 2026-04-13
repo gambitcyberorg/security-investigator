@@ -28,11 +28,11 @@ This skill performs comprehensive security investigations on Entra ID user accou
 11. **[SVG Dashboard Generation](#svg-dashboard-generation)** - Visual dashboard from report data
 
 **Investigation shortcuts:**
-- **Risky user quick triage** (TP Q2): **Q6** (security incidents) → **Q2** (anomalies) → **Q3d** (sign-ins by IP) → Graph: MFA methods
-- **Compromised user forensics** (TP Q2+Q9): **Q3** (sign-in summary) → **Q5** (OfficeActivity) → **Q3d** (IP breakdown) → **Q1** (priority IPs for enrichment)
+- **Risky user quick triage** (TP Q3): **Q6** (security incidents) → **Q2** (anomalies) → **Q3d** (sign-ins by IP) → Graph: MFA methods
+- **Compromised user forensics** (TP Q3+Q9): **Q3** (sign-in summary) → **Q5** (OfficeActivity) → **Q3d** (IP breakdown) → **Q1** (priority IPs for enrichment)
 - **Password spray target** (TP Q4): **Q3c** (sign-in failures) → **Q3d** (IPs hitting this user) → **Q6** (related incidents)
 - **Post-incident user timeline** (TP Q1, incident follow-up): **Q4** (audit logs) → **Q5** (O365 activity) → **Q10** (DLP events) → **Q6** (all incidents)
-- **IP enrichment for user** (TP Q2+Q4): **Q1** (priority IP extraction) → **Q11** (TI matches) → `enrich_ips.py`
+- **IP enrichment for user** (TP Q3+Q4): **Q1** (priority IP extraction) → **Q11** (TI matches) → `enrich_ips.py`
 
 ---
 

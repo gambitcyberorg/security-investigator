@@ -273,8 +273,8 @@ data_sources:
     email_summary: "Q8 → 'N inbound, N spam blocked'"
     exploitable_cves_count: "Q12 → count of CVEs with IsExploitAvailable == True"
     top_cve_detail: "Q12 → top CVE ID + CVSS score, or 'No exploitable CVEs'"
-    closed_incidents_7d: "Q1b → total closed incidents in 7d"
-    classification_summary: "Q1b → '100% BenignPositive' or '%TP / %BP / %FP breakdown'"
+    closed_incidents_7d: "Q2 → total closed incidents in 7d"
+    classification_summary: "Q2 → '100% BenignPositive' or '%TP / %BP / %FP breakdown'"
 
     # Row 3 — Verdict Table + Device Drift
     domain_verdicts: "Dashboard Summary table — 12 rows with domain emoji+name, verdict, key finding (Q1-Q12)"
@@ -282,7 +282,7 @@ data_sources:
 
     # Row 4 — Email Donut + Closed Classification + Critical Assets
     email_threat_composition: "Q8 → {Clean, Spam, Phish, Malware} with counts"
-    closed_incident_classification: "Q1b → {BenignPositive, TruePositive, FalsePositive, Undetermined} counts"
+    closed_incident_classification: "Q2 → {BenignPositive, TruePositive, FalsePositive, Undetermined} counts"
     critical_assets: "Q11 → array of {device, criticality, internet_facing, rce, privesc}"
 
     # Row 5 — Recommendations

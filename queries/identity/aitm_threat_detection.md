@@ -26,9 +26,9 @@ This document synthesizes intelligence from [Jeffrey Appel's 2026 AiTM guide](ht
 ## Quick Reference — Query Index
 
 **Investigation shortcuts:**
-- **User with anonymizedIPAddress or AiTM risk + phishing delivery** (TP Q2+Q8): **Q1** (SessionId multi-country replay via `EntraIdSignInEvents` — primary, ≤30d) → **Q3** (risk events correlated with phishing) → **Q5** (inbox rules during anomalous sessions). >30d fallback: **Q7** (Data Lake variant using `SigninLogs.SessionId` — same detection logic, longer retention)
-- **Post-AiTM compromise timeline** (TP Q2, incident follow-up): **Q4** (MFA method registration) → **Q10** (PIM elevation without re-auth) → **Q13** (cloud app reconnaissance)
-- **AiTM endpoint indicators** (TP Q2+Q8): **Q8** (URL click-through to phishing) → **Q9** (network protection blocks) → **Q11** (SmartScreen blocks)
+- **User with anonymizedIPAddress or AiTM risk + phishing delivery** (TP Q3+Q8): **Q1** (SessionId multi-country replay via `EntraIdSignInEvents` — primary, ≤30d) → **if Q1 returns 0:** **Q2b** (cross-session multi-country OfficeHome — catches persistent credential theft with VPN rotation where attacker uses different sessions from different countries) → **Q3** (risk events correlated with phishing) → **Q5** (inbox rules during anomalous sessions). >30d fallback: **Q7** (Data Lake variant using `SigninLogs.SessionId` — same detection logic, longer retention)
+- **Post-AiTM compromise timeline** (TP Q3, incident follow-up): **Q4** (MFA method registration) → **Q10** (PIM elevation without re-auth) → **Q13** (cloud app reconnaissance)
+- **AiTM endpoint indicators** (TP Q3+Q8): **Q8** (URL click-through to phishing) → **Q9** (network protection blocks) → **Q11** (SmartScreen blocks)
 - **AiTM posture assessment:** See **Part 2** (defensive program)
 - **Response actions for confirmed AiTM:** See **Part 5** (response playbook)
 
@@ -36,6 +36,7 @@ This document synthesizes intelligence from [Jeffrey Appel's 2026 AiTM guide](ht
 |---|-------|----------|-----------|
 | 1 | [AiTM Proxy Sign-In — OfficeHome Multi-Country Session (Advanced Hun...](#query-1-aitm-proxy-sign-in--officehome-multi-country-session-advanced-hunting) | Investigation | `EntraIdSignInEvents` |
 | 2 | [AiTM Proxy Sign-In — Sentinel Data Lake Variant](#query-2-aitm-proxy-sign-in--sentinel-data-lake-variant) | Investigation | `SigninLogs` |
+| 2 | [b: Cross-Session Multi-Country OfficeHome Access (Persistent Creden...](#query-2b-cross-session-multi-country-officehome-access-persistent-credential-theft) | Investigation | `EntraIdSignInEvents` |
 | 3 | [Anomalous Token Risk Events Correlated with Phishing Emails](#query-3-anomalous-token-risk-events-correlated-with-phishing-emails) | Detection | `AADUserRiskEvents` + `EmailEvents` |
 | 4 | [New MFA Method Registration After Suspicious Sign-In](#query-4-new-mfa-method-registration-after-suspicious-sign-in) | Investigation | `AADUserRiskEvents` + `AuditLogs` |
 | 5 | [Inbox Rules Created During Anomalous Token Sessions (Advanced Hunting)](#query-5-inbox-rules-created-during-anomalous-token-sessions-advanced-hunting) | Detection | `AlertInfo` + `CloudAppEvents` |
@@ -373,6 +374,71 @@ SigninLogs
     OriginalCountry = Country, ReplayCountry = OtherCountry, OriginalRequestId
 | order by OtherTimestamp desc
 ```
+
+### Query 2b: Cross-Session Multi-Country OfficeHome Access (Persistent Credential Theft)
+
+Supplements Q1/Q2 by detecting attackers who authenticate from **different VPN/proxy nodes across sessions** rather than replaying the same session cross-country. Q1/Q2 detect the classic EvilGinx pattern (same SessionId, two countries). This query catches **persistent credential theft** where the attacker rotates VPN/proxy infrastructure across sessions — each node produces its own SessionId, so within-session cross-country checks never trigger.
+
+<!-- cd-metadata
+cd_ready: false
+adaptation_notes: "Cross-session aggregation query — summarizes OfficeHome country distribution per user. Not suitable for CD: requires threshold tuning (3+ countries) and may flag legitimate global travelers. Use as triage query after Q1/Q2 return 0 but Identity Protection flags exist."
+-->
+
+**Advanced Hunting variant (≤30d):**
+```kql
+// Cross-session multi-country OfficeHome detection
+// Catches persistent credential theft with VPN/proxy rotation
+// Platform: Defender XDR Advanced Hunting
+EntraIdSignInEvents
+| where Timestamp > ago(30d)
+| where ErrorCode == 0
+| where ApplicationId == "4765445b-32c6-49b0-83e6-1d93765276ca" // OfficeHome
+| summarize 
+    Countries = make_set(Country),
+    CountryCount = dcount(Country),
+    IPs = make_set(IPAddress, 20),
+    UniqueIPs = dcount(IPAddress),
+    Sessions = dcount(SessionId),
+    SignIns = count(),
+    FirstSeen = min(Timestamp),
+    LastSeen = max(Timestamp)
+    by AccountUpn
+| where CountryCount >= 3  // 3+ countries on OfficeHome is suspicious
+| order by CountryCount desc, UniqueIPs desc
+```
+
+**Sentinel Data Lake variant (90d+):**
+```kql
+// Cross-session multi-country OfficeHome detection
+// Platform: Sentinel Data Lake (longer retention for historical analysis)
+let OfficeHomeAppId = "4765445b-32c6-49b0-83e6-1d93765276ca";
+SigninLogs
+| where TimeGenerated > ago(90d)
+| where ResultType == 0
+| where AppId == OfficeHomeAppId
+| extend Country = tostring(parse_json(LocationDetails).countryOrRegion)
+| summarize 
+    Countries = make_set(Country),
+    CountryCount = dcount(Country),
+    IPs = make_set(IPAddress, 20),
+    UniqueIPs = dcount(IPAddress),
+    Sessions = dcount(OriginalRequestId),
+    SignIns = count(),
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated)
+    by UserPrincipalName
+| where CountryCount >= 3
+| order by CountryCount desc, UniqueIPs desc
+```
+
+**Interpretation:**
+- **3–4 countries:** Cross-reference with `AADUserRiskEvents` for `anonymizedIPAddress` or `aiCompoundAccountRisk`. May be legitimate travel if IPs are residential/corporate
+- **5+ countries with VPN/Tor IPs:** High confidence persistent credential theft. Check inbox rules via Q5/Q6
+- **Correlation:** If user appears in Q3 or Q5/Q6, escalate to confirmed compromise
+
+**Entity substitution:** Add `| where AccountUpn =~ "<UPN>"` (AH) or `| where UserPrincipalName =~ "<UPN>"` (Data Lake) for single-user investigation.
+
+---
 
 ### Query 3: Anomalous Token Risk Events Correlated with Phishing Emails
 
