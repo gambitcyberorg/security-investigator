@@ -302,11 +302,11 @@ When executing a skill drill-down, **load the child skill's SKILL.md** and use i
 
 ### 🎬 Take Action — Portal-Ready Remediation Blocks
 
+> ⚠️ **AI-generated content may be incorrect. Always review Take Action queries and portal links for accuracy before executing remediation actions.**
+
 After every non-✅ drill-down that surfaces actionable entities, append a **`🎬 Take Action`** section with **direct portal links** (single entities) or **Advanced Hunting queries** (bulk entities). Ref: [Take action on AH results](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-take-action)
 
 **Skip when:** verdict is ✅/🔵, or the action was already taken (e.g., ZAP purged emails).
-
-> ⚠️ **AI-generated content may be incorrect. Always review Take Action queries and portal links for accuracy before executing remediation actions.**
 
 #### Single Entity vs Bulk Entity Decision Rule
 

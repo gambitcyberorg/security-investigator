@@ -26,7 +26,7 @@ This document synthesizes intelligence from [Jeffrey Appel's 2026 AiTM guide](ht
 ## Quick Reference — Query Index
 
 **Investigation shortcuts:**
-- **User with anonymizedIPAddress or AiTM risk + phishing delivery** (TP Q2+Q8): **Q7** (token replay — same SessionId from multiple IPs) → **Q3** (risk events correlated with phishing) → **Q5** (inbox rules during anomalous sessions)
+- **User with anonymizedIPAddress or AiTM risk + phishing delivery** (TP Q2+Q8): **Q1** (SessionId multi-country replay via `EntraIdSignInEvents` — primary, ≤30d) → **Q3** (risk events correlated with phishing) → **Q5** (inbox rules during anomalous sessions). >30d fallback: **Q7** (Data Lake variant using `SigninLogs.SessionId` — same detection logic, longer retention)
 - **Post-AiTM compromise timeline** (TP Q2, incident follow-up): **Q4** (MFA method registration) → **Q10** (PIM elevation without re-auth) → **Q13** (cloud app reconnaissance)
 - **AiTM endpoint indicators** (TP Q2+Q8): **Q8** (URL click-through to phishing) → **Q9** (network protection blocks) → **Q11** (SmartScreen blocks)
 - **AiTM posture assessment:** See **Part 2** (defensive program)
@@ -40,7 +40,7 @@ This document synthesizes intelligence from [Jeffrey Appel's 2026 AiTM guide](ht
 | 4 | [New MFA Method Registration After Suspicious Sign-In](#query-4-new-mfa-method-registration-after-suspicious-sign-in) | Investigation | `AADUserRiskEvents` + `AuditLogs` |
 | 5 | [Inbox Rules Created During Anomalous Token Sessions (Advanced Hunting)](#query-5-inbox-rules-created-during-anomalous-token-sessions-advanced-hunting) | Detection | `AlertInfo` + `CloudAppEvents` |
 | 6 | [Suspicious Inbox Rules for Forwarding/Redirect (Sentinel Data Lake)](#query-6-suspicious-inbox-rules-for-forwardingredirect-sentinel-data-lake) | Detection | `OfficeActivity` |
-| 7 | [Token Replay — Same SessionId from Multiple IPs/Countries](#query-7-token-replay--same-sessionid-from-multiple-ipscountries) | Investigation | `SigninLogs` |
+| 7 | [Token Replay — Same SessionId from Multiple IPs/Countries (Data Lake)](#query-7-token-replay--same-sessionid-from-multiple-ipscountries-data-lake) | Investigation | `SigninLogs` |
 | 8 | [URL Click-Through to Phishing Sites](#query-8-url-click-through-to-phishing-sites) | Investigation | `UrlClickEvents` |
 | 9 | [Network Protection Events — AiTM Site Connection Attempts](#query-9-network-protection-events--aitm-site-connection-attempts) | Investigation | `DeviceEvents` |
 | 10 | [PIM Elevation Without Re-Authentication After AiTM](#query-10-pim-elevation-without-re-authentication-after-aitm) | Investigation | `AADUserRiskEvents` + `AuditLogs` |
@@ -491,7 +491,7 @@ impactedAssets:
     identifier: "accountUpn"
   - type: "mailbox"
     identifier: "accountUpn"
-adaptation_notes: "Sentinel Data Lake (OfficeActivity). Row-level events with clear exfiltration indicators. `Parameters` is a string field — use `has` for keyword matching."
+adaptation_notes: "OfficeActivity is queryable via AH when LA workspace is connected to unified Defender portal (use TimeGenerated, not Timestamp). Row-level events with clear exfiltration indicators. `Parameters` is a string field — use `has` for keyword matching."
 -->
 ```kql
 // Post-AiTM BEC: Email exfiltration via forwarding rules
@@ -510,19 +510,22 @@ OfficeActivity
 | order by TimeGenerated desc
 ```
 
-### Query 7: Token Replay — Same SessionId from Multiple IPs/Countries
+### Query 7: Token Replay — Same SessionId from Multiple IPs/Countries (Data Lake)
 
-Detects token replay by identifying sessions used from geographically dispersed locations.
+Data Lake equivalent of Q1's SessionId-based token replay detection. Uses `SigninLogs.SessionId` for >30d lookback beyond AH's 30-day retention cap. `SigninLogs` has the same `SessionId` column as `EntraIdSignInEvents`.
+
+> **Q1 vs Q7:** Both use `SessionId` for session-level grouping. Q1 (`EntraIdSignInEvents`) is preferred for ≤30d because AH is free for Analytics-tier tables. Q7 (`SigninLogs` via Data Lake) is for >30d lookback or when AH is unavailable.
 
 <!-- cd-metadata
 cd_ready: false
-adaptation_notes: "Aggregation query — summarizes per SessionId with `dcount(IPAddress) > 1` threshold. Output is one row per session, not per event. Would require restructuring to produce row-level alerts for CD."
+adaptation_notes: "Aggregation query — summarizes per SessionId with `dcount(IPAddress) > 1` threshold. Output is one row per session, not per event. Would require restructuring to produce row-level alerts for CD. Fixed: previously grouped by OriginalRequestId (per-request) instead of SessionId (per-session), missing all multi-country token replay patterns."
 -->
 ```kql
 // AiTM Token Replay: Same session used from multiple locations
 // Platform: Sentinel Data Lake
+// NOTE: Groups by SessionId (session-level), NOT OriginalRequestId (per-request)
 SigninLogs
-| where TimeGenerated > ago(7d)
+| where TimeGenerated > ago(30d)
 | where ResultType == 0
 | extend Country = tostring(parse_json(LocationDetails).countryOrRegion)
 | extend City = tostring(parse_json(LocationDetails).city)
@@ -531,16 +534,16 @@ SigninLogs
     DistinctCountries = dcount(Country),
     Countries = make_set(Country),
     Cities = make_set(City),
-    IPs = make_set(IPAddress),
+    IPs = make_set(IPAddress, 10),
+    Apps = make_set(AppDisplayName, 5),
     FirstSeen = min(TimeGenerated),
     LastSeen = max(TimeGenerated),
     SignInCount = count()
-    by UserPrincipalName, OriginalRequestId
-| where DistinctIPs > 1 and DistinctCountries > 1
+    by UserPrincipalName, SessionId
+| where DistinctCountries > 1
 | extend SessionDuration = LastSeen - FirstSeen
-| where SessionDuration < 1h // Short sessions with multi-country = high confidence
-| project UserPrincipalName, OriginalRequestId, Countries, Cities, 
-    IPs, DistinctIPs, DistinctCountries, SessionDuration, SignInCount
+| project UserPrincipalName, SessionId, Countries, Cities, 
+    IPs, Apps, DistinctIPs, DistinctCountries, SessionDuration, SignInCount
 | order by DistinctCountries desc, DistinctIPs desc
 ```
 

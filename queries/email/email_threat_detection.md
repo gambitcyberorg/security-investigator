@@ -858,7 +858,7 @@ Detect inbox rule creation/modification that sets up forwarding or redirection.
 
 <!-- cd-metadata
 cd_ready: false
-adaptation_notes: "Uses OfficeActivity table — Sentinel-only, may not be available in Advanced Hunting. For CD, consider CloudAppEvents with ActionType containing inbox rule operations instead."
+adaptation_notes: "OfficeActivity is queryable via Advanced Hunting when the LA workspace is connected to the unified Defender portal (use TimeGenerated, not Timestamp). For CD, consider CloudAppEvents with ActionType containing inbox rule operations instead."
 -->
 ```kql
 OfficeActivity
