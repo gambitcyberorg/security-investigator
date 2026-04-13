@@ -727,6 +727,8 @@ python enrich_ips.py --file temp/investigation_user_20251130.json
 
 **Output:** Detailed per-IP results (city, country, ISP/ASN, VPN/proxy/Tor flags, AbuseIPDB score + recent report comments) and a JSON export saved to `temp/`.
 
+**⚠️ Output Consumption:** NEVER `read_file` the `.txt` report during long conversations — it triggers VS Code chat freezes from cumulative response size. Parse the `.json` via PowerShell (`ConvertFrom-Json | Format-Table`) instead.
+
 ---
 
 ### Enumerating User Permissions and Roles
