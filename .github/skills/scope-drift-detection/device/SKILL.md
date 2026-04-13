@@ -51,6 +51,12 @@ This skill detects **scope drift** — the gradual, often imperceptible expansio
 9. **[Error Handling](#error-handling)** - Troubleshooting guide
 10. **[SVG Dashboard Generation](#svg-dashboard-generation)** - Visual dashboard from report
 
+**Investigation shortcuts:**
+- **Device with behavioral drift** (TP Q6): **Q15** (per-device drift scores + dimension ratios) → **Q16** (first-seen processes — new in recent window) → **Q18** (alert/incident correlation) → **Q21** (uptime context)
+- **Suspicious process chains** (TP Q7): **Q17** (rare parent→child chains in recent window) → **Q20** (command-line pattern detection — recon, lateral movement, persistence) → **Q18** (alert correlation)
+- **Fleet uniformity assessment** (TP Q6, all devices clustered): **Q14** (fleet-wide daily trend) → **Q15** (per-device breakdown) → **Q22** (per-session volume — confirms burst vs sustained activity)
+- **Unsigned binary investigation** (standalone): **Q19** (unsigned/unusual signing companies in recent window) → **Q16** (first-seen process overlap) → **Q20** (command-line patterns for flagged binaries)
+
 ---
 
 ## ⚠️ CRITICAL WORKFLOW RULES - READ FIRST ⚠️

@@ -307,6 +307,14 @@ When executing a skill drill-down, **load the child skill's SKILL.md** and use i
 
 After every non-✅ drill-down that surfaces actionable entities, append a **`🎬 Take Action`** section with **direct portal links** (single entities) or **Advanced Hunting queries** (bulk entities). Ref: [Take action on AH results](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-take-action)
 
+**⛔ MANDATORY:** Every `🎬 Take Action` heading in the output MUST be immediately followed by this warning blockquote:
+
+```
+> ⚠️ **AI-generated content may be incorrect. Always review Take Action queries and portal links for accuracy before executing remediation actions.**
+```
+
+Never omit this warning. It must appear below EVERY `🎬 Take Action` heading, not just the first one.
+
 **Skip when:** verdict is ✅/🔵, or the action was already taken (e.g., ZAP purged emails).
 
 #### Single Entity vs Bulk Entity Decision Rule
@@ -445,6 +453,8 @@ DeviceFileEvents
 | Displaying raw (non-defanged) malicious URLs/domains as plain text in results tables | ❌ **PROHIBITED** |
 | Single user/device: direct portal link + PowerShell commands | ✅ **REQUIRED** |
 | Bulk entities (2+ emails, devices, indicators): AH query with Take actions | ✅ **REQUIRED** |
+| Every `🎬 Take Action` heading followed by the warning: `> ⚠️ **AI-generated content may be incorrect. Always review Take Action queries and portal links for accuracy before executing remediation actions.**` | ✅ **REQUIRED** |
+| Rendering a `🎬 Take Action` section without the AI-generated content warning immediately below the heading | ❌ **PROHIBITED** |
 
 ---
 
@@ -1374,6 +1384,7 @@ Prioritize by risk level and actionability. Group by theme (e.g., Identity, Endp
 - [ ] All incidents have clickable XDR portal URLs
 - [ ] Cross-query correlations checked
 - [ ] Every non-✅ drill-down has a `🎬 Take Action` block with portal-ready KQL (correct required columns per entity type)
+- [ ] Every `🎬 Take Action` block includes the `⚠️ AI-generated content` warning immediately below the heading
 - [ ] `📂 Recommended Query Files` section present when any non-✅ verdict exists (clickable links, not tables)
 - [ ] No fabricated data
 

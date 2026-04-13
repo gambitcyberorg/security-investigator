@@ -46,6 +46,12 @@ This skill detects **scope drift** — the gradual, often imperceptible expansio
 9. **[Error Handling](#error-handling)** - Troubleshooting guide
 10. **[SVG Dashboard Generation](#svg-dashboard-generation)** - Visual dashboard from report
 
+**Investigation shortcuts:**
+- **SPN drift triage** (TP Q5): **Q1** (baseline vs recent — drift scores + dimension ratios) → **Q4** (alert/incident correlation) → Tier 1 deep dives for flagged SPNs
+- **Compromised SPN forensics** (TP Q5 + incident context): **Q1** (behavioral profile) → **Q3** (detailed AuditLog changes — credential adds, consent grants, timestamps, actors) → **Q4** (incident status/classification check)
+- **Permission escalation investigation** (TP Q10, standalone): **Q2** (AuditLog summary — operation counts baseline vs recent) → **Q3** (detailed per-operation rows with initiator/target/modified properties) → Graph API: app permission audit
+- **IP infrastructure expansion** (TP Q5, high IPDrift): **Q1** (new IPs list from `NewIPs` array) → anti-join baseline IPs to identify novel sources → IP enrichment (`enrich_ips.py` or `ioc-investigation`) for non-Azure IPs
+
 ---
 
 ## ⚠️ CRITICAL WORKFLOW RULES - READ FIRST ⚠️
