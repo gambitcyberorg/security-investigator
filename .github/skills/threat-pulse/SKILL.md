@@ -223,10 +223,10 @@ For query file prompts, substitute `ago(7d)` with `ago(30d)`. For Data Lake quer
    - **Header:** `Follow-Up Investigation`
    - **Question:** `Select an action to launch (or skip):`
    - **Options:** One per prompt — each option is exactly ONE atomic action (one skill + one entity, or one query file + one hunt). Cross-query correlation context goes in the Description, never in the Label.
-     - **Label format:** `<ONE icon> <ONE action>` — nothing else. Examples: `🔍 Investigate user jsmith@contoso.com`, `📄 Hunt delivered phishing emails`, `🎯 Investigate IP 203.0.113.42`
-     - **Description format:** `Q<N>: <finding summary> → <ONE skill or query file>` (correlation context like `Q3+Q9:` is fine here — it explains WHY, not WHAT to do)
-     - **🔴 ALLOWED EMOJIS in Labels/Descriptions:** ONLY these action-type icons: `🔍` `📄` `🎯` `💾` `🆕`. **NEVER** use verdict/colored circle emojis (🔴🟠🟡🟢✅) in Label or Description text — they render as `��` (broken Unicode) in VS Code Quick Pick UI. Reference verdicts in Description as plain text (e.g., `Q3 [Escalate]:`) instead.
-     - **🔴 HARD RULE:** If you find yourself writing a comma or a second icon in a Label, STOP — you are bundling. Split into two options.
+     - **Label format:** `<ONE icon> <ONE action>` — e.g., `🔍 Investigate user jsmith@contoso.com`, `📄 Hunt delivered phishing emails`
+     - **Description format:** `Q<N>: <finding summary> → <skill or query file>`
+     - **Allowed emojis:** `🔍` `📄` `🎯` `💾` `🆕` only. Verdict emojis (🔴🟠🟡🟢✅) render as `��` in VS Code Quick Pick — use plain text like `[Escalate]` instead.
+     - One icon per Label, one action per option. If tempted to add a comma or second icon, split into two options.
    - Penultimate option: **Label:** `💾 Save full investigation report` / **Description:** `Save the complete Threat Pulse session (scan + all drill-downs) as a markdown file`
    - Final option: **Label:** `Skip` / **Description:** `No follow-up — investigation complete`
    - **multiSelect:** `true`
