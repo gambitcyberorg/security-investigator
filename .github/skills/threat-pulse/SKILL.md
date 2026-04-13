@@ -406,6 +406,9 @@ DeviceInfo
 → *Take actions →* Isolate device, Collect investigation package, Run antivirus scan, Initiate investigation, Restrict app execution
 
 **📁 File — by hash:**
+
+> **Starting table only.** SHA hashes appear across many tables (`DeviceProcessEvents`, `DeviceImageLoadEvents`, etc.). Use `DeviceFileEvents` as the default — it captures file writes and has the columns needed for Quarantine. If the file was only executed (no separate write event), substitute or union with the relevant table. The Quarantine action requires `DeviceId` + `SHA1`/`SHA256` regardless of source table.
+
 ```kql
 DeviceFileEvents
 | where Timestamp > ago(7d)
