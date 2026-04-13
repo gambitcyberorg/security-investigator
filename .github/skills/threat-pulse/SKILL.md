@@ -1,13 +1,13 @@
 ---
 name: threat-pulse
-description: 'Recommended starting point for new users and daily SOC operations. Quick 15-minute security posture scan across 9 domains: active incidents, identity (human + NonHuman), device process drift, rare process chains, email threats, admin & cloud ops, critical asset exposure, and exploitable CVEs. 12 queries executed in parallel batches, producing a prioritized Threat Pulse Dashboard with color-coded verdicts (🔴 Escalate / 🟠 Investigate / 🟡 Monitor / ✅ Clear) and drill-down recommendations pointing to specialized skills. Trigger on getting-started questions like "what can you do", "where do I start", "help me investigate". Supports inline chat and markdown file output'
+description: 'Recommended starting point for new users and daily SOC operations. Quick 15-minute security posture scan across 7 domains: active incidents, identity (human + NonHuman), endpoint, email threats, admin & cloud ops, and exposure. 12 queries executed in parallel batches, producing a prioritized Threat Pulse Dashboard with color-coded verdicts (🔴 Escalate / 🟠 Investigate / 🟡 Monitor / ✅ Clear) and drill-down recommendations pointing to specialized skills. Trigger on getting-started questions like "what can you do", "where do I start", "help me investigate". Supports inline chat and markdown file output'
 ---
 
 # Threat Pulse — Instructions
 
 ## Purpose
 
-The Threat Pulse skill is a rapid, broad-spectrum security scan designed for the "if you only had 15 minutes" scenario. It executes 12 queries across 9 security domains in parallel, producing a prioritized dashboard of findings with drill-down recommendations to specialized investigation skills.
+The Threat Pulse skill is a rapid, broad-spectrum security scan designed for the "if you only had 15 minutes" scenario. It executes 12 queries across 7 security domains in parallel, producing a prioritized dashboard of findings with drill-down recommendations to specialized investigation skills.
 
 **What this skill covers:**
 
@@ -45,13 +45,16 @@ Incidents: `XDR_INCIDENT_BASE` + `ProviderIncidentId`.
 ## 📑 TABLE OF CONTENTS
 
 1. **[Critical Workflow Rules](#-critical-workflow-rules---read-first-)**
-2. **[Execution Workflow](#execution-workflow)**
-3. **[Sample KQL Queries](#sample-kql-queries)** — 12 queries
-4. **[Post-Processing](#post-processing)** — Drift scores, cross-query correlation
-5. **[Query File Recommendations](#query-file-recommendations)**
-6. **[Report Template](#report-template)** — Dashboard format
-7. **[Known Pitfalls](#known-pitfalls)**
-8. **[SVG Dashboard Generation](#svg-dashboard-generation)**
+2. **[Execution Workflow](#execution-workflow)** — Phase 0–3
+3. **[Phase 4: Interactive Follow-Up Loop](#phase-4-interactive-follow-up-loop)**
+4. **[Take Action](#-take-action--portal-ready-remediation-blocks)** — Portal links, AH queries, defanging
+5. **[Sample KQL Queries](#sample-kql-queries)** — 12 queries
+6. **[Post-Processing](#post-processing)** — Drift scores, cross-query correlation
+7. **[Query File Recommendations](#query-file-recommendations)**
+8. **[Report Template](#report-template)** — Dashboard format
+9. **[Markdown File Report Template](#markdown-file-report-template)** — Full report structure
+10. **[Known Pitfalls](#known-pitfalls)**
+11. **[SVG Dashboard Generation](#svg-dashboard-generation)**
 
 ---
 
@@ -67,10 +70,7 @@ Incidents: `XDR_INCIDENT_BASE` + `ProviderIncidentId`.
 
 5. **Parallel execution** — Run the Data Lake query (Q5) and all Advanced Hunting queries (Q1, Q1b, Q2, Q4, Q6, Q7, Q8, Q9, Q10, Q11, Q12) simultaneously.
 
-6. **Cross-query correlation** — After all queries complete, check for correlated findings:
-   - SPN drift (Q5) + unusual credential/consent activity (Q9) → escalate priority
-   - Device in rare process chains (Q7) + device in CVE list (Q12) → escalate priority
-   - Incident entities (Q1) matching users in Q2 → link findings
+6. **Cross-query correlation** — After all queries complete, check for correlated findings per the [Cross-Query Correlation](#cross-query-correlation) table in Post-Processing. Escalate priority when patterns match.
 
 7. **SecurityIncident output rule** — Every incident MUST include a clickable Defender XDR portal URL: `https://security.microsoft.com/incidents/{ProviderIncidentId}`.
 
@@ -80,11 +80,9 @@ Incidents: `XDR_INCIDENT_BASE` + `ProviderIncidentId`.
 
 | Highest Verdict | Query Files | Proactive Skills | Report Section |
 |----------------|-------------|-----------------|----------------|
-| 🔴 or 🟠 | Top 3–5, entity-specific prompts | — | `📂 Recommended Query Files` |
+| 🔴 or 🟠 | Top 3–5, entity-specific prompts | All matching skills | `📂 Recommended Query Files` |
 | 🟡 (no 🔴/🟠) | Top 1–2, broader prompts | Up to 3 posture skills | `📂 Proactive Hunting Suggestions` |
 | All ✅ | Skip | Skip | Omit entirely |
-
-**Rule 8 Tier Reference:** The table above maps to rule 8 (query file recommendations).
 
 ---
 
@@ -94,7 +92,7 @@ Incidents: `XDR_INCIDENT_BASE` + `ProviderIncidentId`.
 
 1. Read `config.json` for workspace ID and Azure MCP parameters
 2. Call `list_sentinel_workspaces()` to enumerate available workspaces
-3. Ask user for output mode and lookback preference (or use defaults)
+3. Use defaults (inline chat, 7d) unless user specified otherwise
 4. **Display scan summary** — Before executing any queries, output the following brief to the user:
 
 ```
@@ -104,7 +102,7 @@ Workspace: <WorkspaceName> (<WorkspaceId>)
 Lookback: <N>d (user-selected or default 7d)
 Output: <Inline / Markdown file / Both>
 
-Executing 12 queries across 9 domains:
+Executing 12 queries across 7 domains:
   🔴 Incidents      — Open high-severity + 7d closed summary (Q1, Q1b)
   🔐 Identity       — Identity risk posture, risk event enrichment, auth spray (Q2, Q4)
   🤖 NonHuman ID    — Service principal behavioral drift (Q5)
@@ -148,7 +146,7 @@ Estimated time: ~2–4 minutes
 ### Phase 3: Post-Processing & Report
 
 1. Interpret device drift scores from Q6 results (see [Post-Processing](#post-processing))
-2. Run cross-query correlation checks (see rule 7 above)
+2. Run cross-query correlation checks (see rule 6 above)
 3. Assign verdicts to each domain (🔴 Escalate / 🟠 Investigate / 🟡 Monitor / ✅ Clear)
 4. Generate prioritized recommendations with drill-down skill references
 5. **⛔ STOP — Recommendation Gate:** Before proceeding to step 6, run the [Query File Recommendations](#query-file-recommendations) procedure matching the highest verdict tier (see Rule 8 table). Skip only when all verdicts are ✅. **Do NOT proceed to step 6 until this gate is resolved.**
@@ -182,7 +180,7 @@ Estimated time: ~2–4 minutes
 | CVE in Q12 | `exposure-investigation` | `Run vulnerability report for <CVE>` |
 | Incident in Q1 | `incident-investigation` | `Investigate incident <ProviderIncidentId>` |
 
-**⛔ MANDATORY: Context-Aware Lookback Expansion**
+#### ⛔ MANDATORY: Context-Aware Lookback Expansion
 
 Drill-downs must cover the **full attack timeline**, which may predate the 7d pulse window. Before executing any follow-up, expand lookback when the target entity has:
 
@@ -216,9 +214,10 @@ For query file prompts, substitute `ago(7d)` with `ago(30d)`. Note expansions in
    - **multiSelect:** `true`
 3. If user selects **Skip** (alone) or pool is empty: end skill execution
 4. If user's selection includes **💾 Save full investigation report:**
-   a. Read `/memories/session/threat-pulse-drilldowns.md` to recover all accumulated drill-down findings (critical after context compaction)
-   b. Compile the complete session — original Threat Pulse dashboard + all drill-down investigation results — into a single markdown file using the [Markdown File Report Template](#markdown-file-report-template)
-   c. Save to `reports/threat-pulse/Threat_Pulse_YYYYMMDD_HHMMSS.md`
+   a. If no drill-downs have been executed yet, the saved report contains only the Threat Pulse scan results (omit the `Drill-Down Investigation Results` and `Cross-Investigation Correlation` sections; note: "No drill-down investigations were performed in this session.")
+   b. Otherwise, read `/memories/session/threat-pulse-drilldowns.md` to recover all accumulated drill-down findings (critical after context compaction)
+   c. Compile the complete session — original Threat Pulse dashboard + all drill-down investigation results — into a single markdown file using the [Markdown File Report Template](#markdown-file-report-template)
+   d. Save to `reports/threat-pulse/Threat_Pulse_YYYYMMDD_HHMMSS.md`
    d. **Weave drill-down insights into the main report** — do NOT simply append raw drill-down output. See the [Markdown File Report Template](#markdown-file-report-template) for the exact structure, including the `## Drill-Down Investigation Results` section format and the `## Cross-Investigation Correlation` section.
    e. Remove the save option from the pool (report already saved). If no other actions were selected alongside it, **end the loop** — the investigation is complete. Otherwise continue to step 5 with the remaining selections.
 5. If user selects one or more actions:
@@ -290,24 +289,41 @@ When executing a `📄` prompt, use the queries **from the file verbatim** with 
 When executing a skill drill-down, **load the child skill's SKILL.md** and use its validated queries. Do NOT write ad-hoc queries from memory — schema hallucination (wrong column names, wrong table) is the #1 drill-down failure mode.
 
 1. Load the child skill's SKILL.md
-2. Match the trigger context (TP Q number) against the skill's **Investigation Shortcuts** section to identify the relevant query chain
+2. Match the trigger context (TP Q number) against the skill's **Investigation shortcuts** section to identify the relevant query chain
 3. Execute the shortcut query chain with entity substitution (workspace and output mode are inherited — the child skill handles this via its "When invoked from a parent skill" section)
 4. For quick triage: run only the shortcut chain. For deep investigation: run the full skill workflow
 
 | Action | Status |
 |--------|--------|
 | Writing ad-hoc KQL queries without loading the child skill's SKILL.md | ❌ **PROHIBITED** |
-| Loading SKILL.md and using its Investigation Shortcuts for the matching TP trigger | ✅ **REQUIRED** |
+| Loading SKILL.md and using its Investigation shortcuts for the matching TP trigger | ✅ **REQUIRED** |
 
 ---
 
-### 🎬 Take Action Queries — Portal-Ready Remediation Blocks
+### 🎬 Take Action — Portal-Ready Remediation Blocks
 
-After every non-✅ drill-down that surfaces actionable entities, append a **`🎬 Take Action`** section with a portal-ready KQL query or portal links. The user copies the query into [Advanced Hunting](https://security.microsoft.com/v2/advanced-hunting), selects rows, and clicks **Take actions**. Ref: [Take action on AH results](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-take-action)
+After every non-✅ drill-down that surfaces actionable entities, append a **`🎬 Take Action`** section with **direct portal links** (single entities) or **Advanced Hunting queries** (bulk entities). Ref: [Take action on AH results](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-take-action)
 
 **Skip when:** verdict is ✅/🔵, or the action was already taken (e.g., ZAP purged emails).
 
-> ⚠️ **AI-generated content may be incorrect. Always review Take Action queries for accuracy before executing remediation actions in Advanced Hunting.**
+> ⚠️ **AI-generated content may be incorrect. Always review Take Action queries and portal links for accuracy before executing remediation actions.**
+
+#### Single Entity vs Bulk Entity Decision Rule
+
+**The remediation format depends on how many entities need action.**
+
+| Scenario | Format |
+|----------|--------|
+| **1 entity** (user, device, IP, domain, hash) | Direct Defender XDR portal link (see [Portal Links](#defender-xdr-portal-links--all-entity-types) table for URL patterns) |
+| **2+ emails** | AH query with `NetworkMessageId in (...)` → Take actions |
+| **2+ devices** | AH query with `DeviceName in~ (...)` → Take actions |
+| **2+ IPs/domains/hashes** | AH query or Add Indicator (click value in AH results) |
+
+**⛔ PROHIBITED:** Generating an AH query for a single entity when a direct portal link would suffice. AH Take Action is for **bulk remediation** — for a single entity, link directly to the portal page where the analyst can act.
+
+**Where to get the IDs for single-entity links:**
+- **User ObjectId (OID):** From Graph API (`/v1.0/users/<UPN>?$select=id`) or IdentityInfo `AccountObjectId` column — already retrieved during drill-down
+- **MDE DeviceId:** From `DeviceInfo` table (`DeviceId` column) or `GetDefenderMachine` API — already retrieved during computer-investigation drill-down
 
 #### Required Columns per Entity Type
 
@@ -319,7 +335,7 @@ After every non-✅ drill-down that surfaces actionable entities, append a **`�
 | **💻 Device** | `DeviceId` | Isolate, collect investigation package, AV scan, initiate investigation, restrict app execution | Use `summarize arg_max(Timestamp, *) by DeviceId` for latest state |
 | **📁 File** | `SHA1` or `SHA256` + `DeviceId` | Quarantine file | Both hash and device required |
 | **🔗 Indicator** | IP, URL/domain, or SHA hash column | Add indicator: allow, warn, or block | No *Take actions* button needed — click the value directly in AH results → *Add indicator* to create a Defender for Endpoint custom indicator |
-| **🔐 Identity** | *(No AH Take Action)* | Portal: confirm user compromised, require user to sign in again, suspend user in app, account settings in app | Use Defender XDR Identity page links (see portal links table below) |
+| **🔐 Identity** | *(No AH Take Action)* | Confirm compromised, revoke sessions, suspend in app | **Single user:** Direct Defender XDR Identity page link. **Never** generate an AH query for identity remediation |
 
 #### Template Queries
 
@@ -336,10 +352,18 @@ EmailEvents
 EmailEvents
 | where Timestamp > ago(30d)
 | where SenderFromDomain =~ "<domain>" and ThreatTypes has "Phish" and DeliveryAction == "Delivered"
+| take 500
 ```
 → *Take actions →* Move to mailbox folder, Delete email (soft/hard), Submit to Microsoft, Initiate automated investigation
 
-**💻 Device — by DeviceName:**
+**💻 Single Device — direct portal link:**
+When acting on a **single device**, link directly to its Defender XDR machine page. The `DeviceId` comes from the `DeviceInfo` table or `GetDefenderMachine` API (already retrieved during `computer-investigation` drill-down).
+
+`[<DeviceName>](https://security.microsoft.com/machines/v2/<MDE_DeviceId>)`
+
+→ Machine page → *Response actions* → Isolate device, Collect investigation package, Run antivirus scan, Initiate investigation, Restrict app execution
+
+**💻 Bulk Devices (2+) — AH query:**
 ```kql
 DeviceInfo
 | where Timestamp > ago(1d)
@@ -369,8 +393,11 @@ DeviceFileEvents
 | **URL** | `https://security.microsoft.com/url/overview?url=<url-encoded-URL>` | `[example.com/path](https://security.microsoft.com/url/overview?url=http%3A%2F%2Fexample.com%2Fpath)` |
 | **IP** | `https://security.microsoft.com/ip/<IP>/overview` | `[<IP>](https://security.microsoft.com/ip/<IP>/overview)` |
 | **File Hash** | `https://security.microsoft.com/file/<SHA1-or-SHA256>/` | `[da5e459...b1bb1e](https://security.microsoft.com/file/da5e45915354850261cf0e87dc7af19597b1bb1e/)` |
+| **Device** | `https://security.microsoft.com/machines/v2/<MDE_DeviceId>` | `[alpine-srv1](https://security.microsoft.com/machines/v2/6b02befec5724a3b79184d006ac417eda6fb05a6)` |
 
 **User fallbacks:** `?upn=<UPN>` when ObjectId is unavailable; `?sid=<SID>&accountName=<Name>&accountDomain=<Domain>` for on-prem AD.
+
+**Device ID source:** `DeviceId` from the `DeviceInfo` AH table or the `id` field from `GetDefenderMachine` API. This is the MDE machine identifier — NOT the Entra Device Object ID (which is different). The computer-investigation skill retrieves this in Step 1b.
 
 #### Entity Display Decision — Portal Link vs Defang
 
@@ -408,11 +435,15 @@ DeviceFileEvents
 | Non-✅ drill-down surfaces actionable entities but no Take Action block | ❌ **PROHIBITED** |
 | Take Action query missing a required column | ❌ **PROHIBITED** |
 | Email Take Action query using `project` (strips columns needed by Submit to Microsoft / Initiate Automated Investigation) | ❌ **PROHIBITED** |
+| AH query for a single user when ObjectId is known (use direct portal links instead) | ❌ **PROHIBITED** |
+| AH query for a single device when MDE DeviceId is known (use direct machine page link instead) | ❌ **PROHIBITED** |
+| AH query for a single IP/domain/hash when a direct portal link suffices | ❌ **PROHIBITED** |
 | Action table with plain-text entities (UPNs, domains, URLs, IPs, hashes) instead of clickable Defender XDR portal links | ❌ **PROHIBITED** |
 | Defanging entities (`[.]`) in action/recommendation tables instead of wrapping in portal links | ❌ **PROHIBITED** |
 | Adding a separate "Portal" column instead of making the entity name itself the clickable link | ❌ **PROHIBITED** |
 | Displaying raw (non-defanged) malicious URLs/domains as plain text in results tables | ❌ **PROHIBITED** |
-| Take Action block with correct required columns + recommended action | ✅ **REQUIRED** |
+| Single user/device: direct portal link + PowerShell commands | ✅ **REQUIRED** |
+| Bulk entities (2+ emails, devices, indicators): AH query with Take actions | ✅ **REQUIRED** |
 
 ---
 
@@ -639,6 +670,8 @@ IdentityPosture
 
 ---
 
+> **Note:** Query numbering skips Q3 (removed in a prior revision). Numbers are preserved for backward compatibility with session memory, drill-down logs, and cross-references.
+
 ### Query 4: Password Spray / Brute-Force Detection
 
 🔐 **Auth spray detection (T1110.003 / T1110.001)** — Identifies IPs targeting multiple users with failed auth across Entra ID cloud sign-ins AND RDP/SSH/network logons on endpoints.
@@ -832,14 +865,7 @@ DeviceProcessEvents
 - **Dcount metrics:** `RC_Dim * 100 / BL_Dim` — compared directly (distinct counts don't scale linearly with time). 100% = normal, >100% = new values appeared.
 - **Weights:** Volume 30%, Processes 25%, Chains 20%, Accounts 15%, Companies 10%.
 
-**Verdict logic:**
-- 🔴 Escalate: Any device with `DriftScore > 200` (major anomaly — <1% of fleet weekly across 90-day validation)
-- 🟠 Investigate: Any device with `DriftScore 150–200` (significant deviation — 0-5% of fleet weekly)
-- 🟡 Monitor: Any device with `DriftScore 120–150` (minor behavioral expansion — 2-17% of fleet weekly)
-- ✅ Clear: All devices within 80–120 (stable fleet median range)
-- 🔵 Informational: Any device with `DriftScore < 80` (contracting activity — may be idle/decommissioned)
-
-**Fleet-uniformity rule:** If ALL top-10 devices cluster within 20 points of each other, the fleet is behaving uniformly and the verdict should be downgraded one level. Drift is most meaningful when individual devices diverge from the fleet cluster.
+**Verdict logic:** See [Device Drift Score Interpretation](#device-drift-score-interpretation-q6) in Post-Processing for the full scale, VolDrift cap context, and fleet-uniformity rule.
 
 ---
 
@@ -1103,7 +1129,7 @@ After all queries complete, check these correlation patterns and escalate priori
 
 Use the **discovery manifest** (`.github/manifests/discovery-manifest.yaml`) to match findings to downstream query files and skills. Contains `title`, `path`, `domains`, `mitre`, and `prompt` only (~500 lines). Auto-generated by `python .github/manifests/build_manifest.py`.
 
-Tier depth follows the Rule 9 table — skip entirely when all verdicts are ✅.
+Tier depth follows the Rule 8 table — skip entirely when all verdicts are ✅.
 
 ### Domain-to-Query Mapping
 
@@ -1129,7 +1155,7 @@ Each threat-pulse query group maps to a domain tag. Non-✅ domains drive manife
    - **Secondary:** MITRE technique overlap — compare technique IDs from Q1/Q1b `Techniques` arrays (e.g., `T1566`, `T1078`) directly against the manifest entry's `mitre` field. Exact string match — no tactic-to-technique translation needed
    - **Tertiary:** Keyword overlap — match entity names, process names, CVE IDs, or ActionTypes from findings against manifest entry titles and paths
 5. **Select top N:** 🔴/🟠 verdicts: 3–5 files. 🟡-only: 1–2 files
-6. **Format links:** Use the `title` and `path` from the manifest entry to build clickable links (see [Link Format Rules](#-mandatory-clickable-file-links) below)
+6. **Format links:** Use the `title` and `path` from the manifest entry to build clickable links (see [Report Output Block](#report-output-block) below for format)
 
 ### Skill Suggestions (Manifest-Based)
 
@@ -1175,7 +1201,7 @@ Insert `📂 Recommended Query Files` section after **Recommended Actions** in t
 **Report structure (all modes):**
 
 1. **Header:** `# 🔍 Threat Pulse — <Workspace> | <Date>` with workspace ID, scan duration, query count
-2. **Dashboard Summary:** 10-row table — one row per query (Q1, Q1b, Q2, Q4–Q12), columns: `#`, `Domain`, `Status` (verdict emoji), `Key Finding` (1-line). Verdicts: 🔴 Escalate | 🟠 Investigate | 🟡 Monitor | ✅ Clear | ❓ No Data
+2. **Dashboard Summary:** 12-row table — one row per query (Q1, Q1b, Q2, Q4–Q12), columns: `#`, `Domain`, `Status` (verdict emoji), `Key Finding` (1-line). Verdicts: 🔴 Escalate | 🟠 Investigate | 🟡 Monitor | ✅ Clear | 🔵 Informational | ❓ No Data
 3. **Detailed Findings:** One section per query — EVERY query gets a section (no skipping). Data tables (max 10 rows inline, unlimited in file). Q1 incidents must include `[#<id>](https://security.microsoft.com/incidents/<ProviderIncidentId>)` links. Q1b closed summary always renders after Q1.
 4. **Cross-Query Correlations:** Table of correlated findings per Post-Processing rules, or `✅ No correlations detected`.
 5. **🎯 Recommended Actions:** Prioritized table with action, trigger query, and drill-down skill.
@@ -1186,6 +1212,10 @@ Insert `📂 Recommended Query Files` section after **Recommended Actions** in t
 **Q1b closed summary:** Classification breakdown table + severity + MITRE tactics/techniques from TP closures. Always render even when Q1 is ✅.
 
 **Zero results format:** `✅ No <type> detected in the last <N>d. Checked: <table> (0 matches)`
+
+**❓ No Data verdict:** Assigned when a query returns a table resolution error (table doesn't exist in workspace) or the query times out. Report the error message and the table that failed. Treat as an investigation gap — the domain is unmonitored.
+
+**🔵 Informational verdict:** Used by Q1b (0 closed incidents) and Q6 (DriftScore < 80, contracting activity). Maps to a neutral row in the Dashboard Summary — no action needed but context is included.
 
 **Markdown file extras:** Full data tables (no row limits), full command-line samples, full CVE lists.
 
@@ -1216,7 +1246,7 @@ State the final risk posture incorporating all evidence gathered.>
 
 ## Dashboard Summary
 
-<Same 10-row verdict table as inline report — Q1, Q1b, Q2, Q4-Q12>
+<Same 12-row verdict table as inline report — Q1, Q1b, Q2, Q4-Q12>
 
 ## Detailed Findings
 
@@ -1294,7 +1324,7 @@ Prioritize by risk level and actionability. Group by theme (e.g., Identity, Endp
 
 | Time | Action | Key Result |
 |------|--------|-----------|
-| <HH:MM> | Threat Pulse scan started | 12 queries across 9 domains |
+| <HH:MM> | Threat Pulse scan started | 12 queries across 7 domains |
 | <HH:MM> | Scan complete | <N> 🔴, <N> 🟠, <N> 🟡, <N> ✅ |
 | <HH:MM> | Drill-Down #1: <title> | <1-line result> |
 | ... | ... | ... |
