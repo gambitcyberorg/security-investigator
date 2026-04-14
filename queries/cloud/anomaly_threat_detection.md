@@ -65,9 +65,9 @@ Both populate the same `Anomalies` table. Available in **both** Advanced Hunting
 
 **Investigation shortcuts:**
 - **Fleet anomaly triage** (TP when Q1 returns 0 High incidents): **Q1** → **Q2** → **Q3** → **Q4**
-- **Risky user anomaly context** (TP Q3): **Q7** (single-user profile) → **Q8** (IP lookup for user's source IPs)
+- **Risky user anomaly context** (TP Q3, or any user drill-down): **Q7** (single-user Anomalies profile) → **Q14** (user MCAS/UEBA BehaviorInfo) → **Q8** (IP lookup for user's source IPs). Always run both Q7 and Q14 — `Anomalies` and `BehaviorInfo` are independent tables with different detection engines
 - **Spray/brute-force IP context** (TP Q4): **Q8** (IP anomaly lookup) → **Q9** (cross-ref with incidents)
-- **MCAS behavior enrichment** (TP Q9 Compromised Sign-In): **Q14** (user MCAS behaviors) → **Q17** (impossible travel)
+- **MCAS behavior enrichment** (TP Q9 Compromised Sign-In): **Q14** (user MCAS behaviors) → **Q17** (impossible travel) → **Q7** (cross-check Anomalies for same user)
 - **Persistence/privilege anomaly hunt** (TP Q10 RoleManagement): **Q5** (tactic heatmap) → **Q4** (high-score Persistence filter)
 > **⛔ Shortcut Default Rule:** When a matching shortcut exists for the investigation context, **use it**. Only run the full query set for "comprehensive anomaly review" or standalone posture assessments.
 ### Section 1: Sentinel Anomalies (UEBA + ML)
