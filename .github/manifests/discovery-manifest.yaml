@@ -4,7 +4,7 @@
 # Slim version: title, path, domains, mitre, prompt only.
 # Use --full flag to generate the verbose manifest with tables, keywords, platform, timeframe.
 
-generated: '2026-04-13T20:45:29Z'
+generated: '2026-04-14T14:28:56Z'
 valid_domains:
 - admin
 - cloud
@@ -127,6 +127,31 @@ skills:
   - identity
   prompt: Investigate user {entity} — sign-in anomalies, MFA, audit trail, Identity Protection risk
 queries:
+- title: Anomaly & Behavior Threat Detection — Sentinel UEBA + MCAS Hunting
+  path: queries/cloud/anomaly_threat_detection.md
+  domains:
+  - identity
+  - endpoint
+  - cloud
+  mitre:
+  - T1078
+  - T1078.004
+  - T1098
+  - T1098.001
+  - T1110
+  - T1110.001
+  - T1136
+  - T1074
+  - T1190
+  - T1531
+  - T1059
+  - T1485
+  - T1562
+  - TA0001
+  - TA0003
+  - TA0005
+  - TA0006
+  - TA0009
 - title: Azure Blob Storage — Defensive Program & Threat Hunting Campaign
   path: queries/cloud/azure_blob_storage_defense_program.md
   domains:
@@ -161,24 +186,6 @@ queries:
   - T1485
   - T1486
   - T1565
-- title: BehaviorEntities & BehaviorInfo — UEBA / MCAS Behavior Hunting
-  path: queries/cloud/behavior_entities.md
-  domains:
-  - identity
-  - endpoint
-  - cloud
-  mitre:
-  - T1078
-  - T1078.004
-  - T1098
-  - T1098.001
-  - T1110
-  - T1110.001
-  - T1074
-  - TA0001
-  - TA0003
-  - TA0006
-  - TA0009
 - title: CloudAppEvents Exploration - Microsoft Sentinel Queries
   path: queries/cloud/cloudappevents_exploration.md
   domains:

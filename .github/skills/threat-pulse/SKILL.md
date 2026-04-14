@@ -257,6 +257,7 @@ For query file prompts, substitute `ago(7d)` with `ago(30d)`. For Data Lake quer
 6. If user selects **🔄 Refresh recommendations:**
    - Read `/memories/session/threat-pulse-drilldowns.md` to gather all accumulated drill-down findings
    - **Discard the current prompt pool entirely.** Rebuild from scratch by re-running the [Query File Recommendations](#query-file-recommendations) procedure AND the [Phase 4 skill matching table](#phase-4-interactive-follow-up-loop) against the **combined** pulse findings + all drill-down findings. New entities, TTPs, and cross-investigation connections discovered during drill-downs drive the new pool — not just the original 12 pulse queries.
+   - **Why refresh vs incremental `🆕`:** The step 7 New Evidence Scan already adds new IOCs/entities incrementally after each drill-down. Refresh is for **re-ranking and re-matching** — e.g., new MITRE techniques discovered in drill-downs may surface different query files from the manifest, or new entities may now match skill triggers that weren't relevant at initial pool build time.
    - Deduplicate against completed prompts (never re-offer an already-executed drill-down)
    - Present the regenerated pool via `vscode_askQuestions` (same format as step 2). The 🔄 option itself stays in the pool — it can be used again after more drill-downs.
    - If selected alongside other actions, execute the refresh FIRST (to rebuild the pool), then present the new pool — do NOT execute the other selections from the stale pool.
