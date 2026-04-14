@@ -551,6 +551,10 @@ DeviceNetworkEvents
 | Rendering a `🎬 Take Action` section without the AI-generated content warning immediately below the heading | ❌ **PROHIBITED** |
 | Bulk indicator (2+ IPs/domains/hashes) Take Action block includes AH query that surfaces values as clickable columns | ✅ **REQUIRED** |
 | Describing "Add indicator" action without providing the AH query that surfaces the values in results | ❌ **PROHIBITED** |
+| AH query in Take Action without a `▶ Run in Advanced Hunting` deep link | ❌ **PROHIBITED** |
+| Every AH query in Take Action includes a clickable deep link | ✅ **REQUIRED** |
+| Manually base64-encoding KQL to build an AH deep link URL (breaks portal — wrong encoding) | ❌ **PROHIBITED** |
+| Using `python scripts/kql_to_ah_url.py --md --file temp/q.kql` for EVERY AH deep link | ✅ **REQUIRED** |
 
 ---
 
@@ -565,11 +569,13 @@ DeviceNetworkEvents
 **Tool:** `RunAdvancedHuntingQuery`
 
 ```kql
-SecurityIncident
+let OpenHighSev = SecurityIncident
 | where TimeGenerated > ago(30d)
 | summarize arg_max(TimeGenerated, *) by IncidentNumber
 | where Status in ("New", "Active")
-| where Severity in ("High", "Critical")
+| where Severity in ("High", "Critical");
+let TotalOpenCount = toscalar(OpenHighSev | count);
+OpenHighSev
 | extend ParsedLabels = parse_json(Labels)
 | mv-apply Label = ParsedLabels on (
     summarize Tags = make_set(tostring(Label.labelName), 5)
@@ -616,13 +622,14 @@ SecurityIncident
     datetime_diff('hour', now(), CreatedTime) < 24, strcat(datetime_diff('hour', now(), CreatedTime), "h ago"),
     strcat(datetime_diff('day', now(), CreatedTime), "d ago"))
 | extend PortalUrl = strcat("https://security.microsoft.com/incidents/", ProviderIncidentId)
-| project ProviderIncidentId, Title, Severity, AgeDisplay, AlertCount, 
+| extend TotalOpenCount = TotalOpenCount
+| project TotalOpenCount, ProviderIncidentId, Title, Severity, AgeDisplay, AlertCount, 
     OwnerUPN, Tactics, Techniques, Accounts, Devices, Tags, PortalUrl, AlertNames, CreatedTime
 | order by bin(CreatedTime, 1d) desc, AlertCount desc
 | take 10
 ```
 
-**Purpose:** Identifies the top 10 newest open high-severity incidents, sorted by day (newest first) then by alert count (highest complexity first within each day). Joins SecurityAlert for MITRE tactic and technique ID visibility, plus extracts `Accounts` (UPNs or AAD ObjectIds) and `Devices` (hostnames) from alert entities for cross-query correlation with Q3 (identity risk), Q6/Q7 (endpoint drift/rare processes), Q4 (spray targets), and Q12 (CVE exposure). Extracts `Tags` from incident labels (both AutoAssigned ML classifications like `Credential Phish`, `BEC Fraud`, `Defender Experts` and User-applied SOC workflow tags). Flags unassigned incidents (empty OwnerUPN).
+**Purpose:** Identifies the top 10 newest open high-severity incidents, sorted by day (newest first) then by alert count (highest complexity first within each day). Returns `TotalOpenCount` on every row so the report can indicate "Showing 10 of N" when more exist. Joins SecurityAlert for MITRE tactic and technique ID visibility, plus extracts `Accounts` (UPNs or AAD ObjectIds) and `Devices` (hostnames) from alert entities for cross-query correlation with Q3 (identity risk), Q6/Q7 (endpoint drift/rare processes), Q4 (spray targets), and Q12 (CVE exposure). Extracts `Tags` from incident labels (both AutoAssigned ML classifications like `Credential Phish`, `BEC Fraud`, `Defender Experts` and User-applied SOC workflow tags). Flags unassigned incidents (empty OwnerUPN).
 
 **Sort logic:** `bin(CreatedTime, 1d) desc, AlertCount desc` — groups incidents by calendar day (newest day first), then ranks by correlated alert count within each day. This ensures the most complex recent incidents surface first, while older backlog naturally drops off.
 
@@ -632,7 +639,7 @@ SecurityIncident
 - **Tags:** Extracted from `Labels` (dynamic array of `{labelName, labelType}` objects). Includes both `AutoAssigned` (Defender ML) and `User` (SOC analyst/automation rule) tags.
 - Accounts, Devices, and Tags each capped at 5 per incident to limit output size.
 
-**Output columns:** `ProviderIncidentId` (linked via `PortalUrl`), `Title`, `Severity`, `AgeDisplay` (relative time: "3m ago", "2h ago", "1d ago"), `AlertCount`, `OwnerUPN`, `Tactics`, `Techniques`, `Accounts`, `Devices`, `Tags`. `AlertNames` and `CreatedTime` are projected for LLM context but not rendered as table columns.
+**Output columns:** `TotalOpenCount` (total open High/Critical incidents — used for "Showing 10 of N" header, not rendered as a table column), `ProviderIncidentId` (linked via `PortalUrl`), `Title`, `Severity`, `AgeDisplay` (relative time: "3m ago", "2h ago", "1d ago"), `AlertCount`, `OwnerUPN`, `Tactics`, `Techniques`, `Accounts`, `Devices`, `Tags`. `AlertNames` and `CreatedTime` are projected for LLM context but not rendered as table columns.
 
 **Verdict logic:**
 - 🔴 Escalate: 5+ new High/Critical incidents in 24h, or any incident with `AlertCount > 50`, or any unassigned incident with CredentialAccess/LateralMovement tactics
@@ -1366,7 +1373,7 @@ Insert `📂 Recommended Query Files` section after **Recommended Actions** in t
 5. **🎯 Recommended Actions:** Prioritized table with action, trigger query, and drill-down skill.
 6. **📂 Recommended Query Files:** Per the Report Output Block procedure above. For 🟡-only verdicts, use "📂 Proactive Hunting Suggestions" header instead. Omit entirely when all ✅.
 
-**Q1 column format:** `| Incident | Title | Age | Alerts | Owner | Tactics | Accounts | Devices | Tags |` — Unassigned shows `⚠️ Unassigned`. `Age` uses relative time from `AgeDisplay` (e.g., "3m ago", "2h ago", "1d ago"). `Accounts`, `Devices`, and `Tags` are entity/label arrays (max 5 each) — render inline as comma-separated values.
+**Q1 column format:** `| Incident | Title | Age | Alerts | Owner | Tactics | Accounts | Devices | Tags |` — Unassigned shows `⚠️ Unassigned`. `Age` uses relative time from `AgeDisplay` (e.g., "3m ago", "2h ago", "1d ago"). `Accounts`, `Devices`, and `Tags` are entity/label arrays (max 5 each) — render inline as comma-separated values. When `TotalOpenCount > 10`, prepend text: "**Showing 10 of {TotalOpenCount} open High/Critical incidents** (sorted by newest, most complex first)". When `TotalOpenCount <= 10`, omit the note.
 
 **Q2 closed summary:** Classification breakdown table + severity + MITRE tactics/techniques from TP closures. Always render even when Q1 is ✅.
 

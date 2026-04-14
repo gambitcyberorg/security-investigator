@@ -733,6 +733,19 @@ python enrich_ips.py --file temp/investigation_user_20251130.json
 
 ---
 
+### AH Deep Links — Clickable "Run in Portal" URLs (`kql_to_ah_url.py`)
+
+Every AH query in a `🎬 Take Action` block MUST include a clickable deep link that opens the query directly in the Defender XDR Advanced Hunting editor.
+
+**Generation:** `python scripts/kql_to_ah_url.py "<KQL>"` (or `--md` for markdown link, `--file` for .kql files). For multi-line KQL or queries with internal quotes, write to a temp file first: `Set-Content temp/q.kql "<KQL>"; python scripts/kql_to_ah_url.py --file temp/q.kql`. Place the output link immediately after the KQL code block: `[▶ Run in Advanced Hunting](<url>)`.
+
+| Action | Status |
+|--------|--------|
+| AH query in Take Action without a `▶ Run in Advanced Hunting` deep link | ❌ **PROHIBITED** |
+| Every AH query in Take Action includes a clickable deep link | ✅ **REQUIRED** |
+
+---
+
 ### Enumerating User Permissions and Roles
 
 When asked to check permissions or roles for a user account, **ALWAYS query BOTH**:
