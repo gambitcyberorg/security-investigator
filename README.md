@@ -212,20 +212,20 @@ Ad-hoc investigations naturally evolve into reusable assets. After completing an
 
 ```
 security-investigator/
-├── generate_report_from_json.py # Report generator (main entry point)
-├── report_generator.py          # HTML report builder class
-├── investigator.py              # Data models and core types
 ├── enrich_ips.py                # Standalone IP enrichment utility
-├── cleanup_old_investigations.py # Automated cleanup (3+ days old)
 ├── config.json                  # Configuration (workspace IDs, mappings)
 ├── config.json.template         # Config template (committed to Git)
 ├── .env                         # API tokens (gitignored, auto-loaded by python-dotenv)
 ├── .env.template                # Token template (committed to Git)
+├── requirements.txt             # Python dependencies
+├── requirements.lock            # Hash-verified dependency lockfile
 ├── .vscode/
 │   └── mcp.json.template       # MCP server config template (copy to mcp.json)
-├── requirements.txt             # Python dependencies
 ├── .github/
 │   ├── copilot-instructions.md  # Skill detection, universal patterns, routing
+│   ├── manifests/               # Auto-generated discovery indexes
+│   │   ├── discovery-manifest.yaml  # Query file + skill index (domains, MITRE, prompts)
+│   │   └── build_manifest.py        # Manifest generator script
 │   └── skills/                  # 25 Agent Skills (modular investigation workflows)
 │       ├── ai-agent-posture/
 │       ├── app-registration-posture/
@@ -254,16 +254,24 @@ security-investigator/
 │       ├── threat-pulse/
 │       └── user-investigation/
 ├── queries/                     # Verified KQL query library (grep-searchable, by data domain)
-│   ├── identity/               # Entra ID / Azure AD identity queries
-│   ├── endpoint/               # Defender for Endpoint device queries
+│   ├── cloud/                  # Cloud app & exposure management queries
 │   ├── email/                  # Defender for Office 365 email queries
-│   ├── network/                # Network telemetry queries
-│   └── cloud/                  # Cloud app & exposure management queries
+│   ├── endpoint/               # Defender for Endpoint device queries
+│   ├── identity/               # Entra ID / Azure AD identity queries
+│   ├── incidents/              # SecurityIncident & SecurityAlert queries
+│   └── network/                # Network telemetry queries
+├── scripts/                     # Python utilities
+│   ├── generate_report_from_json.py  # Report generator (main entry point)
+│   ├── report_generator.py           # HTML report builder class
+│   ├── investigator.py               # Data models and core types
+│   ├── cleanup_old_investigations.py  # Automated cleanup (3+ days old)
+│   └── generate_tocs.py              # Auto-generate query file TOCs
 ├── mcp-apps/                    # Local MCP servers (visualization, automation)
 │   ├── sentinel-geomap-server/
 │   ├── sentinel-heatmap-server/
 │   └── sentinel-incident-comment/
 ├── docs/                        # Setup guides and reference documentation
+├── authoring/                   # Blog drafts, writing guides, and marketing content
 ├── reports/                     # Generated investigation reports (organized by type)
 │   ├── ai-agent-posture/       # AI agent security posture reports
 │   ├── app-registration-posture/ # App registration posture reports
@@ -292,6 +300,25 @@ Each file uses a standardized metadata header for efficient `grep_search` discov
 **Tables:** <exact KQL table names>
 **Keywords:** <searchable terms — attack techniques, scenarios, field names>
 **MITRE:** <ATT&CK technique IDs, e.g., T1021.001, TA0008>
+**Domains:** <domain tags for manifest indexing, e.g., identity, endpoint, email>
+```
+
+### Discovery Manifest (`.github/manifests/`)
+
+The **discovery manifest** provides a machine-readable index of all query files and skills, enabling deterministic cross-referencing by domain and MITRE technique. The Threat Pulse skill loads this manifest to match findings to downstream query files and drill-down skills automatically.
+
+- **`discovery-manifest.yaml`** — Compact index (~500 lines) with `title`, `path`, `domains`, `mitre`, and `prompt` fields for each query file and skill
+- **`build_manifest.py`** — Generator script that scans `queries/` metadata headers and skill YAML frontmatter to produce the manifest
+
+**How it works:**
+1. Query files declare `**Domains:**` tags in their metadata header (valid tags: `incidents`, `identity`, `spn`, `endpoint`, `email`, `admin`, `cloud`, `exposure`)
+2. Skills declare `threat_pulse_domains:` and `drill_down_prompt:` in their YAML frontmatter
+3. `python .github/manifests/build_manifest.py` scans both and emits the manifest
+4. The Threat Pulse skill reads the manifest to match non-✅ findings → relevant query files and skills by domain tag and MITRE technique overlap
+
+**Regenerate after** creating or renaming query files/skills, or changing `Domains:`/`threat_pulse_domains:` values:
+```powershell
+python .github/manifests/build_manifest.py
 ```
 
 ---
