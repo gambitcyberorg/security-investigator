@@ -551,7 +551,7 @@ DeviceNetworkEvents
 | Rendering a `🎬 Take Action` section without the AI-generated content warning immediately below the heading | ❌ **PROHIBITED** |
 | Bulk indicator (2+ IPs/domains/hashes) Take Action block includes AH query that surfaces values as clickable columns | ✅ **REQUIRED** |
 | Describing "Add indicator" action without providing the AH query that surfaces the values in results | ❌ **PROHIBITED** |
-| AH query in Take Action without a `▶ Run in Advanced Hunting` deep link | ❌ **PROHIBITED** |
+| AH query in Take Action without a `Run in Advanced Hunting` deep link | ❌ **PROHIBITED** |
 | Every AH query in Take Action includes a clickable deep link | ✅ **REQUIRED** |
 | Manually base64-encoding KQL to build an AH deep link URL (breaks portal — wrong encoding) | ❌ **PROHIBITED** |
 | Using `python scripts/kql_to_ah_url.py --md --file temp/q.kql` for EVERY AH deep link | ✅ **REQUIRED** |

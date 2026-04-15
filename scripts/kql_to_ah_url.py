@@ -30,7 +30,7 @@ Rendering in reports:
         | where Timestamp > ago(7d)
         | where NetworkMessageId in ("<id1>", "<id2>")
         ```
-        [▶ Run in Advanced Hunting](<url>)
+        [Run in Advanced Hunting](<url>)
 """
 
 import base64
@@ -71,7 +71,7 @@ def main():
     parser.add_argument("--file", "-f", help="Read KQL from a file")
     parser.add_argument(
         "--md", action="store_true",
-        help="Output as a markdown link: [▶ Run in Advanced Hunting](url)"
+        help="Output as a markdown link: [Run in Advanced Hunting](url)"
     )
     args = parser.parse_args()
 
@@ -90,7 +90,7 @@ def main():
     url = kql_to_ah_url(kql)
 
     if args.md:
-        print(f"[▶ Run in Advanced Hunting]({url})")
+        print(f"[Run in Advanced Hunting]({url})")
     else:
         print(url)
 
