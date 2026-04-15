@@ -353,7 +353,7 @@ Not all tables support NRT frequency. Use NRT only with these tables:
 \* `EmailEvents`: `LatestDeliveryLocation` and `LatestDeliveryAction` columns are excluded from NRT.
 
 **Sentinel tables (Preview):**
-`ABAPAuditLog_CL`, `AuditLogs`, `AWSCloudTrail`, `AWSGuardDuty`, `AzureActivity`, `Cisco_Umbrella_dns_CL`, `Cisco_Umbrella_proxy_CL`, `CommonSecurityLog`, `GCPAuditLogs`, `MicrosoftGraphActivityLogs`, `OfficeActivity`, `Okta_CL`, `OktaV2_CL`, `ProofpointPOD`, `ProofPointTAPClicksPermitted_CL`, `ProofPointTAPMessagesDelivered_CL`, `SecurityAlert`, `SecurityEvent`, `SigninLogs`
+`ABAPAuditLog_CL`, `ABAPChangeDocsLog_CL`, `AuditLogs`, `AWSCloudTrail`, `AWSGuardDuty`, `AzureActivity`, `CommonSecurityLog`, `GCPAuditLogs`, `MicrosoftGraphActivityLogs`, `OfficeActivity`, `Okta_CL`, `OktaV2_CL`, `ProofpointPOD`, `ProofPointTAPClicksPermitted_CL`, `ProofPointTAPMessagesDelivered_CL`, `SecurityAlert`, `SecurityEvent`, `SigninLogs`
 
 > **Important:** `SecurityEvent` and `SigninLogs` support NRT — our Event ID 4799/4702 queries can run as NRT if they meet the single-table/no-joins constraint.
 

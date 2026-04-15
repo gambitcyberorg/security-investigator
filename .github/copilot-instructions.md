@@ -450,6 +450,8 @@ Every SecurityIncident query MUST include `ProviderIncidentId` in the output and
 
 > **Key fact:** The LA workspace is connected to the unified Defender portal. Advanced Hunting can query **all** tables in the workspace — XDR-native tables (Device*, Email*, etc.), Sentinel-native tables (SigninLogs, AuditLogs, LAQueryLogs, etc.), and custom tables (`*_CL`). It is NOT limited to Defender XDR data only.
 >
+> **Custom Detection eligibility:** `_CL` tables are **fully supported** for Custom Detection rules, including NRT frequency. Examples: `ABAPAuditLog_CL`, `Okta_CL`, `ProofPointTAPClicksPermitted_CL`. See the detection-authoring skill for the complete NRT-supported table list. Do NOT assume `_CL` tables are ineligible for Custom Detections.
+>
 > **ASIM parser functions** (`_Im_NetworkSession`, `_Im_WebSession`, `_Im_Dns`, `_Im_ProcessEvent`, etc.) and other workspace-level functions are **fully supported in Advanced Hunting** — they resolve against the connected LA workspace. However, `mcp_sentinel-data_query_lake` (Data Lake MCP) **cannot resolve** workspace-level functions and returns `Unknown function` errors for `_Im_*` calls. **Always use `RunAdvancedHuntingQuery` for ASIM parser queries.**
 
 | Factor | `RunAdvancedHuntingQuery` (Advanced Hunting) | `mcp_sentinel-data_query_lake` (Sentinel Data Lake) |

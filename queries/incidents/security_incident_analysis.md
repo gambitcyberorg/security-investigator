@@ -37,7 +37,6 @@ The `SecurityIncident` table aggregates correlated alerts into incidents for inv
 - **Closed incident review & TP rate** (TP Q2): **Q2** (classification trends) → **Q10** (MTTC by severity) → **Q8** (product source — which detections drive TPs?)
 - **Cross-incident entity correlation** (TP Q1 when multiple open incidents share entities): **Q5** (entity hotspot) → **Q4** (MITRE distribution) → **Q6** (tag analysis for ML classification patterns)
 - **Detection coverage & tuning** (standalone posture assessment): **Q8** (product source breakdown) → **Q4** (tactic distribution) → **Q7** (singleton incidents — tuning candidates) → **Q2** (FP rate trending)
-
 > **⛔ Shortcut Default Rule:** When a matching shortcut exists for the investigation context, **use it**. Only run the full query set for "comprehensive incident posture review" or standalone SOC metrics assessments.
 
 | # | Query | Use Case | Key Table |

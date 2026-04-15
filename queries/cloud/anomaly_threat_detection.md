@@ -72,18 +72,6 @@ Both populate the same `Anomalies` table. Available in **both** Advanced Hunting
 > **⛔ Shortcut Default Rule:** When a matching shortcut exists for the investigation context, **use it**. Only run the full query set for "comprehensive anomaly review" or standalone posture assessments.
 ### Section 1: Sentinel Anomalies (UEBA + ML)
 ### Section 2: BehaviorEntities & BehaviorInfo (MCAS + Defender for Cloud)
-| # | Query | Use Case | Key Table |
-|---|-------|----------|-----------|
-| 10 | [Behavior Overview — Volume by ActionType and Source](#query-10-behavior-overview--volume-by-actiontype-and-source) | Dashboard | `BehaviorInfo` |
-| 11 | [Behavior Detail with MITRE Mapping](#query-11-behavior-detail-with-mitre-mapping) | Investigation | `BehaviorInfo` |
-| 12 | [Entity Decomposition for a Specific Behavior](#query-12-entity-decomposition-for-a-specific-behavior) | Investigation | `BehaviorEntities` |
-| 13 | [All Entity Types and Roles Distribution](#query-13-all-entity-types-and-roles-distribution) | Investigation | `BehaviorEntities` |
-| 14 | [Enrich User Investigation — MCAS Behaviors for a UPN](#query-14-enrich-user-investigation--mcas-behaviors-for-a-upn) | Investigation | `BehaviorInfo` |
-| 15 | [Enrich IP Investigation — Behaviors Involving an IP](#query-15-enrich-ip-investigation--behaviors-involving-an-ip) | Investigation | `BehaviorInfo` |
-| 16 | [OAuth App Credential Abuse — Unusual Credential Additions](#query-16-oauth-app-credential-abuse--unusual-credential-additions) | Investigation | `BehaviorInfo` |
-| 17 | [Impossible Travel Summary with IP Extraction](#query-17-impossible-travel-summary-with-ip-extraction) | Dashboard | `BehaviorInfo` |
-| 18 | [Kubernetes Container Drift / Malware Behaviors](#query-18-kubernetes-container-drift--malware-behaviors) | Investigation | `BehaviorEntities` |
-| 19 | [Cross-Reference Behaviors with SecurityAlert](#query-19-cross-reference-behaviors-with-securityalert) | Detection | `BehaviorInfo` |
 
 | # | Query | Use Case | Key Table |
 |---|-------|----------|-----------|
