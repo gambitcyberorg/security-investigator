@@ -50,6 +50,18 @@ All queries in this file normalize Graph API URIs by replacing GUIDs with `{id}`
 | `Scopes` not available in AH | `Scopes`, `Roles`, `SessionId`, `UniqueTokenId`, `DurationMs` are **Data Lake only** columns |
 | `TargetWorkload` is AH-only | Not available in `MicrosoftGraphActivityLogs` |
 
+### Known High-Volume Applications (False Positive Guidance)
+
+When investigating Graph API traffic, these Microsoft first-party applications generate extremely high volumes as part of normal operations. Recognizing them prevents false-positive investigations:
+
+| AppId | App Name | Typical Behavior | Expected Volume | Affected Queries |
+|-------|----------|-------------------|-----------------|-----------------|
+| `05a65629-4c1b-48c1-a78b-804c4abdd4af` | **Microsoft Cloud App Security** (App Governance) | Continuously inventories **all** service principal permissions by calling `/servicePrincipals/{id}/appRoleAssignedTo` and `/servicePrincipals/{id}/oauth2PermissionGrants` for every SPN in the tenant. This is the App Governance feature performing its permission posture scan. | Millions of GET requests per week, scanning 50K+ SPNs. Dominates endpoint volume dashboards — often the top 2 endpoints by request count. | Q1 (dominates top endpoints), Q5 (bulk GET on ServicePrincipals), Q7 (app-only SPN access), Q10/Q11 (volume anomaly baseline) |
+| `01fc33a7-78ba-4d2f-a4b7-768e336e890e` | **MS-PIM** | Time-bounded role assignment lifecycle — creates and deletes `roleAssignments` on a schedule as PIM-eligible roles activate and expire. | Tens of role assignment POST + DELETE per day, all successful. IPs are Azure infrastructure. Empty `AccountObjectId` (backend service). | Q3 (role assignment mutations), Q6 (mutating operations) |
+| `810dcf14-1858-4bf2-8134-4c369fa3235b` | **Azure AD Identity Governance – Entitlement Management** | Reads org info, subscribedSkus, role assignments, and tenant relationships for access package management. App-only tokens only (no user context). May also call `roleEligibilityScheduleRequests` — 404 errors indicate stale references to deleted users or expired eligibility schedules, not a security concern. | Low volume per SPN but appears across many `ServicePrincipalId` values (one per managed identity). High error rates (100%) are common — operational, not security. | Q7 (SPN app-only), Q2 (if 404s appear as errors) |
+
+> **Filtering guidance:** Do NOT hardcode these AppIds into query exclusions. Instead, use this table to **contextualize results** during analysis — knowing that MCAS at the top of Q1 is expected lets you focus on the unexpected entries below it.
+
 ---
 
 ## Quick Reference — Query Index
