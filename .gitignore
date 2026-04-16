@@ -54,3 +54,6 @@ Thumbs.db
 # MCP Apps - ignore build artifacts and dependencies
 mcp-apps/**/node_modules/
 mcp-apps/**/dist/
+
+# Prompt files
+prompts/

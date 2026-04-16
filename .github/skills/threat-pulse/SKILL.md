@@ -822,7 +822,7 @@ let EntraResults = SprayFailures
 | project SourceIP, FailedAttempts, TargetUsers, SampleTargets, 
     Protocols = FailedApps, Countries, Surface,
     TotalSignIns, Successes, SprayRatio, SuccessRate, TotalDistinctApps;
-// Endpoint brute-force (unchanged — no success context available)
+// Endpoint brute-force — Surface label by LogonType
 let EndpointBrute = DeviceLogonEvents
 | where Timestamp > ago(7d)
 | where ActionType == "LogonFailed"
@@ -833,12 +833,14 @@ let EndpointBrute = DeviceLogonEvents
     TargetUsers = dcount(AccountName),
     SampleTargets = make_set(AccountName, 5),
     Protocols = make_set(strcat(LogonType, " → ", DeviceName), 3),
-    Countries = dynamic(["—"])
+    Countries = dynamic(["—"]),
+    LogonTypes = make_set(LogonType)
     by SourceIP = RemoteIP
 | where FailedAttempts >= 10
-| extend Surface = "Endpoint (RDP/SSH)",
+| extend Surface = iff(array_length(LogonTypes) == 1 and LogonTypes[0] == "RemoteInteractive", "Endpoint (RDP)", "Endpoint (Network Logon)"),
     TotalSignIns = FailedAttempts, Successes = long(0), 
-    SprayRatio = 100.0, SuccessRate = 0.0, TotalDistinctApps = long(0);
+    SprayRatio = 100.0, SuccessRate = 0.0, TotalDistinctApps = long(0)
+| project-away LogonTypes;
 union EntraResults, EndpointBrute
 | order by SprayRatio desc, TargetUsers desc, FailedAttempts desc
 | take 15
@@ -848,7 +850,7 @@ union EntraResults, EndpointBrute
 - **Entra ID:** Uses `EntraIdSignInEvents` (Advanced Hunting) which merges interactive + non-interactive sign-ins into a single table. Error codes: 50126=bad password, 50053=locked account, 50057=disabled account. The query enriches failure data with the IP's full traffic profile to compute `SprayRatio` (spray failures ÷ total sign-ins) and `TotalDistinctApps`. Two filters eliminate corporate proxies, VPN concentrators, and Azure gateways:
   - **`SprayRatio >= 1.0`** — spray failures must be ≥1% of the IP's total sign-in volume. A proxy with 500K sign-ins and 77 spray errors → 0.01% → filtered. A pure attacker with 77 failures and 0 successes → 100% → kept.
   - **`TotalDistinctApps < 50`** — IPs serving 50+ distinct applications are shared infrastructure. Real spray targets 1–3 apps.
-- **Endpoint:** RDP (`RemoteInteractive`) and SSH/SMB (`Network`) failed logons on MDE-enrolled devices. Threshold of ≥10 failures. No success context available in DeviceLogonEvents for filtering.
+- **Endpoint:** RDP (`RemoteInteractive`) and Network Logon (`Network`) failed logons on MDE-enrolled devices. Surface labels: `Endpoint (RDP)` for pure RemoteInteractive, `Endpoint (Network Logon)` for anything involving Network logon type. **NLA caveat:** RDP with Network Level Authentication generates `LogonType == "Network"` (not `RemoteInteractive`), so `Endpoint (Network Logon)` may be RDP-via-NLA or SMB — the manifest surfaces both `rdp_threat_detection.md` and `smb_threat_detection.md` for drill-down. Threshold of ≥10 failures. No success context available in DeviceLogonEvents for filtering.
 
 **Output columns:** `SourceIP`, `FailedAttempts`, `TargetUsers`, `SampleTargets`, `Protocols`, `Countries`, `Surface`, `TotalSignIns`, `Successes`, `SprayRatio`, `SuccessRate`, `TotalDistinctApps`. The `SprayRatio` and `TotalDistinctApps` columns provide immediate false-positive triage context.
 

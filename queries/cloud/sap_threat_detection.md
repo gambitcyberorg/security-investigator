@@ -90,7 +90,7 @@ The built-in SAP analytic rules use **legacy function-based table names** (`SAPA
 | 15 | [BTP Privileged Role Collection Assignments](#query-15-btp-privileged-role-collection-assignments) | Investigation | — |
 | 16 | [BTP Malware Detection in Dev Spaces](#query-16-btp-malware-detection-in-dev-spaces) | Detection | — |
 | 17 | [BTP Security Event Overview](#query-17-btp-security-event-overview) | Dashboard | `SampleEvents` |
-| 18 | [SAP Alerts Correlation — Sentinel Integration](#query-18-sap-alerts-correlation--sentinel-integration) | Detection | `SecurityAlert` |
+| 18 | [SAP Alerts Correlation — Sentinel Integration](#query-18-sap-alerts-correlation--sentinel-integration) | Detection | `SecurityAlert` + `SecurityIncident` |
 
 
 ## Query 1: SAP System Landscape Overview

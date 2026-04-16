@@ -14,6 +14,13 @@
 
 This file covers **two RDP threat scenarios** with queries for both `SecurityEvent` and `DeviceLogonEvents`:
 
+**Companion files:**
+- **SMB / Network Logon threats:** See `queries/endpoint/smb_threat_detection.md` for LogonType 3 (Network) / `LogonType == "Network"` detection
+
+### NLA Coverage Note
+
+RDP with Network Level Authentication (NLA) enabled generates `LogonType 3` / `LogonType == "Network"` for **failed** logons (NLA rejects at the CredSSP layer before the RDP session starts). Only **successful** RDP sessions produce `LogonType 10` / `LogonType == "RemoteInteractive"`. This file's internal lateral movement queries (Part A Q2–Q6) and external brute-force queries (Part B Q7, Part C Q10) already include `LogonType in (3, 10)` / `LogonType in ("RemoteInteractive", "Network")` to capture NLA failures. The SMB query file (`smb_threat_detection.md`) covers the same `Network` logon type — if both files surface during a drill-down, use the [disambiguation query](smb_threat_detection.md#-nla-rdp-ambiguity--read-before-interpreting-results) to determine the actual port (3389 = RDP-via-NLA, 445 = SMB).
+
 ---
 
 ## Quick Reference — Query Index
