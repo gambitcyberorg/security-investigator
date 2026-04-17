@@ -2104,8 +2104,8 @@ foreach ($tactic in $tacticOrder) {
     # Sort: priority first, then rules desc within ✅
     $sortedRows = @($classifiedRows | Sort-Object SortPriority, @{Expression={$_.SortRules}; Descending=$true}, TechId)
 
-    # For large tactics: limit ❌ rows to 10
-    $maxGapRows = 10
+    # For large tactics: limit ❌ rows to 3 (representative gaps only — full technique list in ATT&CK framework)
+    $maxGapRows = 3
     $gapRows = @($sortedRows | Where-Object { $_.SortPriority -eq 5 })
     $nonGapRows = @($sortedRows | Where-Object { $_.SortPriority -lt 5 })
     $truncatedGapCount = 0
@@ -2397,11 +2397,21 @@ if ($silentRules.Count -gt 0) {
     [void]$prerenderedSections.AppendLine("| Rule | Source | Tactics | Techniques |")
     [void]$prerenderedSections.AppendLine("|------|--------|---------|------------|")
 
-    # Group by (Tactics, Techniques) composite key
-    $srGroups = $silentRules | Sort-Object Tactics, Name | Group-Object { "$($_.Tactics)|$($_.Techniques)" }
+    # Group by (Tactics, Techniques) composite key. Clusters (≥3) are emitted first, then individual rules up to a total cap.
+    $srMaxRows = 40
+    $srGroupsAll = $silentRules | Sort-Object Tactics, Name | Group-Object { "$($_.Tactics)|$($_.Techniques)" }
+    $srClusters = @($srGroupsAll | Where-Object { $_.Count -ge 3 })
+    $srSingles = @($srGroupsAll | Where-Object { $_.Count -lt 3 })
+    $srGroups = @($srClusters) + @($srSingles)
     $srRowCount = 0
+    $srOmittedRuleCount = 0
 
     foreach ($grp in $srGroups) {
+        if ($srRowCount -ge $srMaxRows) {
+            # Cap reached — count remaining rules and stop
+            $srOmittedRuleCount += $grp.Count
+            continue
+        }
         if ($grp.Count -ge 3) {
             # Collapsed row — find common prefix of rule names for a descriptive label
             $names = $grp.Group | ForEach-Object { $_.Name }
@@ -2436,9 +2446,13 @@ if ($silentRules.Count -gt 0) {
             }
         }
     }
-    $srCollapsed = $silentRules.Count - $srRowCount
+    $srCollapsed = $silentRules.Count - $srRowCount - $srOmittedRuleCount
+    if ($srOmittedRuleCount -gt 0) {
+        [void]$prerenderedSections.AppendLine("")
+        [void]$prerenderedSections.AppendLine("...and $srOmittedRuleCount additional silent rules not shown (table capped at $srMaxRows rows; see full list in Sentinel portal Analytic Rules view).")
+    }
     if ($srCollapsed -gt 0) {
-        Write-Host "   ℹ️  SilentRules: $($silentRules.Count) rules condensed to $srRowCount rows ($srCollapsed rules grouped)" -ForegroundColor DarkYellow
+        Write-Host "   ℹ️  SilentRules: $($silentRules.Count) rules condensed to $srRowCount rows ($srCollapsed rules grouped, $srOmittedRuleCount omitted by cap)" -ForegroundColor DarkYellow
     }
 }
 
@@ -2803,6 +2817,16 @@ $phase2Block = Remove-ScratchpadSection $phase2Block 'ThreatScenarios'
 $trimmedSections += 'ThreatScenarios'
 # Phase 3: sections now in PRERENDERED.IncidentsByTactic / CombinedTacticCoverage / DataReadiness / ConnectorHealth / AlertFiring / ActiveVsTagged
 foreach ($sect in @('IncidentsByTactic', 'PlatformTacticCoverage', 'DataReadiness_Summary', 'MissingTables', 'TierBlockedTables', 'ConnectorHealth_Summary', 'AlertFiring_MitreCorrelation', 'ActiveTacticCoverage')) {
+    $phase3Block = Remove-ScratchpadSection $phase3Block $sect
+    $trimmedSections += $sect
+}
+# Phase 3: additional drops — raw data fully duplicated by PRERENDERED.TechniqueTables, SCORE section, or pre-rendered ConnectorHealth/DataReadiness detail tables.
+# Counts for Tier1/2/3 are preserved in SCORE (Platform_Tier1/2/3) and PlatformTechniquesByTier summary block.
+# Platform alert names per technique are embedded in PRERENDERED.TechniqueTables (Detections column).
+# TechniqueDetail is fully superseded by PRERENDERED.TechniqueTables (same data, per-tactic markdown tables).
+# DeployedProducts_Supplementary is not referenced in SKILL-report.md; primary DeployedProducts covers the use case.
+# UnverifiedTables is only used for a static "parser false positives" note in the template — specific table list not rendered.
+foreach ($sect in @('PlatformAlertCoverage', 'Tier1_AlertProven', 'Tier2_DeployedCapability', 'Tier3_CatalogCapability', 'DeployedProducts_Supplementary', 'TechniqueDetail', 'UnverifiedTables')) {
     $phase3Block = Remove-ScratchpadSection $phase3Block $sect
     $trimmedSections += $sect
 }

@@ -10,7 +10,45 @@ All data gathering is performed by `Invoke-MitreScan.ps1`, which writes a determ
 
 **Data flow:** `Invoke-MitreScan.ps1` → `temp/mitre_scratch_<timestamp>.md` → LLM reads scratchpad → renders report.
 
-**Single-write rendering:** The entire report (§1-§6) is rendered in a single `create_file` call.
+**Incremental-write rendering (REQUIRED):** The report is too large to emit in a single `create_file` call — doing so hits the LLM output token limit and truncates the file. **Render the report across multiple tool calls**, one section per call:
+
+1. **`create_file`** → header + advisory disclaimer + "Why this report?" callout + **§1** (Executive Summary: Score card, Detection Inventory, Platform Coverage, Top 3 Recommendations)
+2. **`replace_string_in_file`** → append **§2** (Tactic Coverage Matrix) — anchor `oldString` on the last line of §1
+3. **`replace_string_in_file`** → append **§3** (Technique Deep Dive — the largest section; per-tactic tables copied verbatim from `PRERENDERED.TechniqueTables`)
+4. **`replace_string_in_file`** → append **§4** (Coverage Gap Analysis)
+5. **`replace_string_in_file`** → append **§5** (Operational MITRE Correlation: §5.1–§5.6)
+6. **`replace_string_in_file`** → append **§6** + Appendix (Recommendations, Query Reference, Score Methodology, Limitations, footer)
+
+Each call has an independent output-token budget, so the cumulative report size is not bound by a single-call limit. When appending, the `oldString` should match the trailing line(s) of the previously written content and `newString` should preserve that trailing content + the new section.
+
+> ⛔ **Do NOT attempt to render §1–§6 in a single `create_file` call.** It will truncate silently and produce an incomplete report.
+
+### 🔴 MANDATORY: All 6 Appends MUST Complete
+
+The LLM MUST execute **all 6 tool calls** above. Stopping after §5 produces an incomplete report missing §6 and the Appendix (the two most actionable sections: Recommendations + Score Methodology).
+
+**Required behavior:**
+- After each append (2-5), state briefly "Now §N…" and immediately issue the next `replace_string_in_file` call.
+- **After append #5 (§5), you MUST issue append #6 in the same turn — do NOT declare the report complete.**
+- The final tool call MUST be append #6 (§6 Recommendations + Appendix + footer).
+- Only after append #6 completes successfully, say "Report saved" and summarize.
+
+**Final verification step (REQUIRED after append #6):** Use `grep_search` or `read_file` on the report to confirm these headings exist:
+- `## 6. Recommendations`
+- `### ⚡ Quick Wins`
+- `### 🔄 Ongoing Maintenance`
+- `### Coverage Priority Matrix`
+- `## Appendix`
+- `### C. Limitations`
+
+If any are missing, issue an additional `replace_string_in_file` to append the missing content.
+
+| Action | Status |
+|--------|--------|
+| Declaring "Report saved" before append #6 completes | ❌ **PROHIBITED** |
+| Claiming §6 was appended without issuing the `replace_string_in_file` tool call | ❌ **PROHIBITED** |
+| Stopping after §5 because the report "looks complete" | ❌ **PROHIBITED** |
+| Skipping the final verification read | ❌ **PROHIBITED** |
 
 ---
 
@@ -22,7 +60,7 @@ All data gathering is performed by `Invoke-MitreScan.ps1`, which writes a determ
 | §1 Detection Inventory | `PHASE_1.AR_Summary` + `PHASE_1.CD_Summary` |
 | §1 Top 3 Recommendations | Computed at render time from all scratchpad sections using Rule D |
 | §2 Tactic Coverage Matrix | `PRERENDERED.TacticCoverageMatrix` (pre-rendered table with badges — copy VERBATIM). Raw data retained in `PHASE_1.TacticCoverage` for LLM narrative. |
-| §3 Technique Deep Dive | `PRERENDERED.TechniqueTables` (pre-rendered per-tactic markdown tables — copy VERBATIM). Raw data retained in `PHASE_3.TechniqueDetail` for LLM narrative/analysis. |
+| §3 Technique Deep Dive | `PRERENDERED.TechniqueTables` (pre-rendered per-tactic markdown tables — copy VERBATIM). Raw `PHASE_3.TechniqueDetail` trimmed (fully captured in PRERENDERED.TechniqueTables). |
 | §3 Untagged Rules | `PHASE_1.UntaggedRules` |
 | §3 ICS/OT Techniques | `PHASE_1.ICS_Techniques` |
 | §4 Coverage Gap Analysis | `PHASE_1.TacticCoverage` (zero/low coverage tactics) + `PRERENDERED.ThreatScenarios` (pre-rendered tables with Rule B badges and Rule E split — copy VERBATIM). Raw `PHASE_2.ThreatScenarios` trimmed (fully captured in PRERENDERED). |
@@ -30,10 +68,10 @@ All data gathering is performed by `Invoke-MitreScan.ps1`, which writes a determ
 | §5 Alert Firing | `PRERENDERED.AlertFiring` (pre-rendered table with [AR]/[CD] badges — copy VERBATIM). Raw `PHASE_3.AlertFiring` retained for other cross-refs; `AlertFiring_MitreCorrelation` trimmed (fully captured in PRERENDERED). `PHASE_3.ActiveTacticCoverage` trimmed (fully captured in PRERENDERED.ActiveVsTagged). |
 | §5 Active vs Tagged | `PRERENDERED.ActiveVsTagged` (pre-rendered table with status badges — copy VERBATIM). |
 | §5 Incidents by Tactic | `PRERENDERED.IncidentsByTactic` (pre-rendered table — copy VERBATIM). Raw `PHASE_3.IncidentsByTactic` trimmed (fully captured in PRERENDERED). |
-| §5 Platform Alert Coverage | `PHASE_3.PlatformAlertCoverage` + `PHASE_3.DeployedProducts` |
-| §5 Platform Tier Classification | `PHASE_3.PlatformTechniquesByTier` + `Tier1_AlertProven` + `Tier2_DeployedCapability` + `Tier3_CatalogCapability` |
+| §5 Platform Alert Coverage | `PHASE_3.DeployedProducts` (raw `PlatformAlertCoverage` trimmed — alert names per technique embedded in PRERENDERED.TechniqueTables) |
+| §5 Platform Tier Classification | `PHASE_3.PlatformTechniquesByTier` (tier counts). Raw `Tier1_AlertProven` / `Tier2_DeployedCapability` / `Tier3_CatalogCapability` trimmed — tier-to-technique mapping embedded in PRERENDERED.TechniqueTables (Platform column). |
 | §5 Combined Tactic Coverage | `PRERENDERED.CombinedTacticCoverage` (pre-rendered table — copy VERBATIM). Raw `PHASE_3.PlatformTacticCoverage` trimmed (fully captured in PRERENDERED). |
-| §5 Data Readiness | `PRERENDERED.DataReadiness` (pre-rendered summary + detail tables — copy VERBATIM). Raw `PHASE_3.DataReadiness` retained for AlertFiring cross-ref; `DataReadiness_Summary`, `MissingTables`, `TierBlockedTables` trimmed (fully captured in PRERENDERED). `PHASE_3.UnverifiedTables` retained for parser false positives note. |
+| §5 Data Readiness | `PRERENDERED.DataReadiness` (pre-rendered summary + detail tables — copy VERBATIM). Raw `PHASE_3.DataReadiness` retained for AlertFiring cross-ref; `DataReadiness_Summary`, `MissingTables`, `TierBlockedTables`, `UnverifiedTables` trimmed (fully captured in PRERENDERED or static template note). |
 | §5 Connector Health | `PRERENDERED.ConnectorHealth` (pre-rendered summary + detail tables — copy VERBATIM). Raw `PHASE_3.ConnectorHealth` retained for LastEvent timestamps; `ConnectorHealth_Summary` trimmed (fully captured in PRERENDERED). |
 | §6 Recommendations | Synthesized from all phases |
 
@@ -241,7 +279,7 @@ The pipeline pre-renders the complete 14-row + TOTAL table with:
 
 **Data source:** `PRERENDERED.TechniqueTables` (pre-rendered per-tactic markdown tables) + `PHASE_1.UntaggedRules` + `PHASE_1.ICS_Techniques`
 
-> **Tables are now pre-rendered by the pipeline** to eliminate LLM rendering errors (cross-tactic hallucination, dropped platform alert names, inconsistent badge assignment, tactic name formatting). The `PRERENDERED.TechniqueTables` section contains complete per-tactic markdown tables with headers, badges, detections, and platform columns already computed. Raw data is retained in `PHASE_3.TechniqueDetail` for LLM narrative/analysis text.
+> **Tables are now pre-rendered by the pipeline** to eliminate LLM rendering errors (cross-tactic hallucination, dropped platform alert names, inconsistent badge assignment, tactic name formatting). The `PRERENDERED.TechniqueTables` section contains complete per-tactic markdown tables with headers, badges, detections, and platform columns already computed. Raw `PHASE_3.TechniqueDetail` is trimmed from the scratchpad (fully superseded by PRERENDERED.TechniqueTables).
 
 #### 3a. Per-Tactic Technique Tables
 
@@ -265,7 +303,7 @@ Each tactic in the PRERENDERED section has a header followed by a complete markd
 
 **What the LLM adds (analytical):**
 - For **zero-coverage tactics** with `<!-- ZERO_COVERAGE -->` comment: write narrative context explaining why coverage is zero (e.g., Reconnaissance is pre-compromise, Collection has platform coverage but no custom rules). Reference specific technique IDs and their detection opportunities.
-- For **any tactic**: optionally add 1-2 sentences of analysis AFTER the table (e.g., "Command and Control is heavily concentrated: all 23 rules target T1071 via TI-mapping templates"). Use `PHASE_3.TechniqueDetail` raw data for analysis if needed.
+- For **any tactic**: optionally add 1-2 sentences of analysis AFTER the table (e.g., "Command and Control is heavily concentrated: all 23 rules target T1071 via TI-mapping templates"). Derive analysis directly from the pre-rendered table rows.
 - **Cross-reference** with §4 SOC Optimization scenarios and §5.5 Data Readiness where relevant.
 
 **🔴 PROHIBITED:**
@@ -477,7 +515,7 @@ If the tagging suggestions include techniques, cross-reference them with §2 to 
 
 #### 5.1 Platform-Native Detection Coverage (M6)
 
-**Data source:** `PHASE_3.PlatformAlertCoverage` + `PHASE_3.DeployedProducts` + `PHASE_3.PlatformTechniquesByTier` + `PHASE_3.PlatformTacticCoverage`
+**Data source:** `PHASE_3.DeployedProducts` + `PHASE_3.PlatformTechniquesByTier` + `PRERENDERED.CombinedTacticCoverage` (raw `PlatformAlertCoverage`, `Tier1_AlertProven`, `Tier2_DeployedCapability`, `Tier3_CatalogCapability`, `PlatformTacticCoverage` trimmed — all data embedded in PRERENDERED blocks and tier counts)
 
 If `PlatformAlert_TechniqueCount > 0`, render platform coverage:
 

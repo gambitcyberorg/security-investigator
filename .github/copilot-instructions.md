@@ -64,7 +64,7 @@ When you need environment values (especially for Azure MCP Server calls), **read
 
 ---
 
-## 🔴 SENTINEL WORKSPACE SELECTION - GLOBAL RULE1
+## 🔴 SENTINEL WORKSPACE SELECTION - GLOBAL RULE
 
 **This rule applies to ALL skills and ALL Sentinel queries. Follow STRICTLY.**
 
@@ -107,15 +107,35 @@ When executing ANY Sentinel query (via the Sentinel Data Lake `query_lake` MCP t
 
 ---
 
-## 🔴 KQL QUERY EXECUTION - PRE-FLIGHT CHECKLIST
+## 🔴 KQL QUERY & HUNT EXECUTION - PRE-FLIGHT CHECKLIST
 
-**This checklist applies to EVERY KQL query before execution.**
+**This checklist applies to EVERY KQL query, hunt, search, or data lookup — whether the user said "query", "hunt", "search", "look for", "find", "do we have X", "is there any Y", or just pasted an IoC/keyword/tool name.**
 
-**Exception — Skill & query library queries:** When following a SKILL.md investigation workflow or using a query directly from the `queries/` library, the queries are already verified and battle-tested. Skip Steps 1–4 and use those queries directly (substituting entity values as instructed). Step 5 (sanity-check zero results) still applies.
+**🔴 MANDATORY FIRST ACTION — NO EXCEPTIONS:** Before the first `mcp_sentinel-data_query_lake` or `RunAdvancedHuntingQuery` tool call of a conversation turn, you MUST complete Step 1 (discovery manifest + grep of `queries/**` and `.github/skills/**`). If you are about to write a KQL query and have not yet done a Priority 1 or Priority 2 discovery check for the user's keyword/topic, **STOP and do the discovery first**. A "hunt for X" request is NEVER an exception — it is the exact scenario the manifest exists to serve.
 
-Before writing or executing any **ad-hoc KQL query** (i.e., not from a SKILL.md file), complete these steps **in order**:
+**Self-check before every KQL tool call:** *"Did I grep_search `queries/**` for the user's keyword (tool name, IoC, threat name, table, operation) in this turn?"* If no → STOP, do the discovery, then resume.
 
-### Step 1: Check for Existing Verified Queries
+**Exception — Skill & query library queries:** When following a SKILL.md investigation workflow or using a query directly from the `queries/` library, the queries are already verified and battle-tested. Skip Steps 1–4 and use those queries directly (substituting entity values as instructed). Step 0 (tool selection) and Step 5 (sanity-check zero results) still apply. *Note: "I already know the keyword" does NOT qualify as this exception — you must have actually located the query file.*
+
+Before writing or executing any **ad-hoc KQL query or hunt** (i.e., not already from a SKILL.md file or `queries/` file), complete these steps **in order**:
+
+### Step 0: Pick the Right Tool for the Lookback Window
+
+**Check the user's requested lookback against tool retention before writing KQL:**
+
+| Lookback | Tool | Why |
+|----------|------|-----|
+| **≤ 30 days** | `RunAdvancedHuntingQuery` (AH) | Default; free for Analytics-tier tables |
+| **> 30 days** (31d, 60d, 90d, "last quarter", date ranges >30d) | `mcp_sentinel-data_query_lake` (Data Lake) | AH Graph API silently truncates results to 30d — no error, no warning. Using AH for 90d under-reports days 31–90. |
+
+**Self-check before every KQL tool call:** *"If lookback > 30 days, am I on Data Lake?"* If not, switch.
+
+**Timestamp adaptation when switching AH → Data Lake:**
+- XDR-native tables (`Device*`, `Email*`, `Cloud*`, `Alert*`, `Identity*`, `Entra*`): change `Timestamp` → `TimeGenerated`
+- Sentinel/LA tables (`SigninLogs`, `AuditLogs`, `SecurityAlert`, etc.): already use `TimeGenerated` in both tools
+- Column name differences (e.g., `EntraIdSignInEvents.AccountUpn` ↔ `SigninLogs.UserPrincipalName`): see the EntraIdSignInEvents row in Step 3
+
+### Step 1: Check for Existing Verified Queries (MANDATORY FIRST STEP)
 
 | Priority | Source | Action |
 |----------|--------|--------|
@@ -210,15 +230,23 @@ These universal KQL mistakes are frequent LLM errors regardless of which table i
 
 ⛔ **DO NOT report "no results found" until you have verified the query itself is correct.** A zero-result query may indicate a bad query, not absence of data.
 
+### Step 6: Execute Before Sharing
+
+**Any KQL query block presented to the user — inline or in a `🎬 Take Action` portal handoff — MUST be valid, tested, and confirmed to return results before sharing. The only exception is when 0 results is the intended outcome AND the reasoning is communicated to the user.** If a query returns 0 unexpectedly, apply Step 5 sanity-check, fix it, and re-run. Do not paste untested KQL into chat.
+
 ### 🔴 PROHIBITED Actions
 
 | Action | Status |
 |--------|--------|
+| Calling `mcp_sentinel-data_query_lake` or `RunAdvancedHuntingQuery` before doing a Priority 1 (manifest) or Priority 2 (grep) discovery check for the keyword/topic in this turn | ❌ **PROHIBITED** |
+| Treating a "hunt for X" / "search for X" / "look for X" / "find Y" / "do we have Z" request as exempt from Step 1 | ❌ **PROHIBITED** |
 | Writing KQL from scratch without completing Steps 1-2 | ❌ **PROHIBITED** |
 | Filtering `SecurityIncident.AlertIds` by entity names | ❌ **PROHIBITED** |
 | Reading `SecurityAlert.Status` as current investigation status | ❌ **PROHIBITED** |
 | Reporting 0 results without sanity-checking the query logic | ❌ **PROHIBITED** |
+| Sharing an investigative KQL query with the user without executing it first | ❌ **PROHIBITED** |
 | Using `Timestamp` on Sentinel/LA tables in Data Lake queries | ❌ **PROHIBITED** — use `TimeGenerated` |
+| Executing `RunAdvancedHuntingQuery` when user-requested lookback > 30 days | ❌ **PROHIBITED** — AH silently truncates to 30d; use `mcp_sentinel-data_query_lake` instead |
 
 ---
 
@@ -400,7 +428,7 @@ Never generate executable commands that change tenant, mailbox, user, device, or
 ### Skill Detection Workflow
 
 1. **Parse user request** for trigger keywords from table above
-2. **Getting started / exploratory requests:** If the user asks "what can you do?", "where do I start?", "help me investigate", "how do I use this", "show me what you can do", "what's going on?", or any open-ended orientation question — **recommend and offer to run the `threat-pulse` skill** as the starting point. Briefly explain it runs a 15-minute broad scan across 9 security domains and produces a prioritized dashboard with drill-down recommendations to specialized skills. Ask if they'd like to run it.
+2. **Getting started / exploratory requests:** If the user asks "what can you do?", "where do I start?", "help me investigate", "how do I use this", "show me what you can do", "what's going on?", or any open-ended orientation question — **recommend and offer to run the `threat-pulse` skill** as the starting point. Briefly explain it runs a 15-minute broad scan across 7 security domains and produces a prioritized dashboard with drill-down recommendations to specialized skills. Ask if they'd like to run it.
 3. **If match found:** Read the skill file:
    - Standard skills: `.github/skills/<skill-name>/SKILL.md`
    - Subfolder skills (e.g., scope-drift-detection): `.github/skills/<parent-skill>/<sub-skill>/SKILL.md`
@@ -483,48 +511,35 @@ Every SecurityIncident query MUST include `ProviderIncidentId` in the output and
 
 This applies to: incident links, entity links (user, domain, IP, device, file hash), and AH portal links (`https://security.microsoft.com/v2/advanced-hunting?tid=<tenant_id>` — plain link, no encoded query). KQL `strcat()` patterns must substitute the `tenant_id` value at query time.
 
+### 🔴 URL Hallucination — GLOBAL RULE
+
+Only output a portal URL if it is documented in the active skill, a `queries/` file, or this file — or built from such a template by substituting query-result IDs. Otherwise use a plain-text breadcrumb (e.g., *Defender XDR → Settings → Indicators*). Never construct portal URLs from memory.
 
 ### 🔧 Tool Selection Rule: Data Lake vs Advanced Hunting
 
-**Two KQL execution tools are available. Each has trade-offs:**
+> See [Step 0 of the KQL pre-flight checklist](#step-0-pick-the-right-tool-for-the-lookback-window) for the lookback-based decision and timestamp adaptation. This section covers the remaining differences.
 
-> **Key fact:** The LA workspace is connected to the unified Defender portal. Advanced Hunting can query **all** tables in the workspace — XDR-native tables (Device*, Email*, etc.), Sentinel-native tables (SigninLogs, AuditLogs, LAQueryLogs, etc.), and custom tables (`*_CL`). It is NOT limited to Defender XDR data only.
->
-> **Custom Detection eligibility:** `_CL` tables are **fully supported** for Custom Detection rules, including NRT frequency. Examples: `ABAPAuditLog_CL`, `Okta_CL`, `ProofPointTAPClicksPermitted_CL`. See the detection-authoring skill for the complete NRT-supported table list. Do NOT assume `_CL` tables are ineligible for Custom Detections.
->
-> **ASIM parser functions** (`_Im_NetworkSession`, `_Im_WebSession`, `_Im_Dns`, `_Im_ProcessEvent`, etc.) and other workspace-level functions are **fully supported in Advanced Hunting** — they resolve against the connected LA workspace. However, `mcp_sentinel-data_query_lake` (Data Lake MCP) **cannot resolve** workspace-level functions and returns `Unknown function` errors for `_Im_*` calls. **Always use `RunAdvancedHuntingQuery` for ASIM parser queries.**
+**Key facts:**
+- The LA workspace is connected to the unified Defender portal. Advanced Hunting can query **all** tables in the workspace — XDR-native tables (Device*, Email*, etc.), Sentinel-native tables (SigninLogs, AuditLogs, LAQueryLogs, etc.), and custom tables (`*_CL`). It is NOT limited to Defender XDR data only.
+- **Custom Detection eligibility:** `_CL` tables are **fully supported** for Custom Detection rules, including NRT frequency. Examples: `ABAPAuditLog_CL`, `Okta_CL`, `ProofPointTAPClicksPermitted_CL`. See the detection-authoring skill for the complete NRT-supported table list.
+- **ASIM parser functions** (`_Im_NetworkSession`, `_Im_WebSession`, `_Im_Dns`, `_Im_ProcessEvent`, etc.) and other workspace-level functions are **fully supported in Advanced Hunting** — they resolve against the connected LA workspace. `mcp_sentinel-data_query_lake` **cannot resolve** workspace-level functions and returns `Unknown function` errors for `_Im_*` calls. Use `RunAdvancedHuntingQuery` for ASIM parser queries.
 
 | Factor | `RunAdvancedHuntingQuery` (Advanced Hunting) | `mcp_sentinel-data_query_lake` (Sentinel Data Lake) |
 |--------|-----------------------------------------------|------------------------------------------------------|
-| **Cost** | Free for Analytics-tier tables (included in Defender license). **Note:** Tables on Auxiliary (Data Lake) or Basic plan still incur query costs even when queried via AH. | Billed per query (Log Analytics costs) |
-| **Retention** | 30 days via Graph API (`/v1.0/security/runHuntingQuery`). The Defender portal UI can access full LA retention (90+ days) through a different API path — the 30-day cap is a **Graph API / MCP limitation**, not a data retention limit. For >30-day lookback via MCP, use Data Lake or Azure MCP `workspace_log_query` instead. | 90+ days (workspace-configured) |
-| **Timestamp column** | `Timestamp` for XDR-native tables; `TimeGenerated` for LA/Sentinel tables — use whichever the table requires | `TimeGenerated` |
-| **Safety filter** | MCP-level safety filter may block queries with offensive security keywords | No additional safety filter beyond KQL validation |
-| **Negation syntax** | `!has_any` and `!in~` may fail in `let` blocks — use `not()` wrappers | Standard KQL negation operators work reliably |
+| **Cost** | Free for Analytics-tier tables (Defender license). Auxiliary/Basic-tier tables still incur query costs even when queried via AH. | Billed per query (Log Analytics costs) |
+| **Retention** | 30 days (Graph API cap — silently truncates). | 90+ days (workspace-configured) |
+| **Safety filter** | MCP-level filter may block queries with offensive-security keywords | No additional filter beyond KQL validation |
+| **Negation syntax** | `!has_any` / `!in~` may fail in `let` blocks — use `not()` wrappers | Standard KQL negation operators work reliably |
+| **Workspace functions** | Supports ASIM parsers and workspace-level functions | Cannot resolve workspace-level functions |
 
-#### Ad-Hoc Query Decision Logic
-
-For **ad-hoc queries** (user-initiated, not part of a skill workflow), use this simple decision:
-
-| Condition | Tool | Reason |
-|-----------|------|--------|
-| **Lookback ≤ 30 days** (any table) | **Advanced Hunting** | Free for Analytics-tier tables; Auxiliary/Basic tables still incur query costs |
-| **Lookback > 30 days** | **Data Lake** or **Azure MCP `workspace_log_query`** | AH Graph API caps results at 30 days (portal has full 90-day access via different API path) |
-| **Query blocked by AH safety filter** | **Data Lake** | Data Lake has no MCP safety filter |
-| **AH returns "table not found"** | **Data Lake** | Fallback for edge cases |
-
-**Default: Advanced Hunting first.** It covers all tables in the connected workspace. Note: querying Auxiliary (Data Lake) or Basic tier tables via AH still incurs per-query costs — AH is only free for Analytics-tier tables.
+**Fallback triggers (switch AH → Data Lake):**
+- Lookback > 30 days (see Step 0)
+- Query blocked by AH safety filter
+- AH returns "table not found" (legacy tables, some custom tables)
 
 #### Skill File Override Rule
 
-**When executing a skill workflow** (from `.github/skills/`), the skill's tool specifications take precedence over the ad-hoc rule above. If a skill file specifies `mcp_sentinel-data_query_lake` for a query, use Data Lake. If it specifies `RunAdvancedHuntingQuery`, use AH. Skills may choose a specific tool deliberately for reasons like retention requirements, safety filter avoidance, or tested compatibility.
-
-#### Timestamp Adaptation
-
-When switching between tools, adapt the timestamp column if needed:
-- XDR-native tables in AH use `Timestamp`
-- LA/Sentinel tables use `TimeGenerated` in **both** tools
-- When moving an XDR query to Data Lake: `Timestamp` → `TimeGenerated`
+**When executing a skill workflow** (from `.github/skills/`), the skill's tool specifications take precedence over the ad-hoc rule. Skills may choose a specific tool deliberately for retention requirements, safety-filter avoidance, or tested compatibility.
 
 ### KQL Search MCP
 GitHub-powered KQL query discovery and schema intelligence (331+ tables from Defender XDR, Sentinel, Azure Monitor):

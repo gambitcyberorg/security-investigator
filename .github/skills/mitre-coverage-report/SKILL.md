@@ -90,7 +90,7 @@ To rebuild from upstream: download the [CTID M365 mapping JSON](https://center-f
 ```
 Step 1:  Run Invoke-MitreScan.ps1 (Phases 1-3 — data gathering)
 Step 2:  Read scratchpad + SKILL-report.md (Phase 4 prep)
-Step 3:  Render full report (§1-§6) → create_file
+Step 3:  Render report incrementally (§1 via create_file, then §2–§6 appended via replace_string_in_file)
 ```
 
 ### Step 1: Run Data Gathering
@@ -115,11 +115,22 @@ Step 3:  Render full report (§1-§6) → create_file
 1. Read the scratchpad file (path printed by PS1 at completion)
 2. Read [SKILL-report.md](SKILL-report.md) for rendering templates
 
-### Step 3: Render Report (Single Write)
+### Step 3: Render Report (Incremental Writes)
 
-Render the **complete report (§1-§6)** in a single `create_file` call. Apply SKILL-report.md templates to scratchpad data, following Rules A-D. Write to the report file.
+Render the report across **multiple tool calls** — one section per call — to avoid single-call output token limits that truncate large reports:
 
-**⛔ Single-write requirement:** The entire report MUST be rendered in one `create_file` call. Do NOT split rendering across multiple tool calls.
+1. `create_file` → header + disclaimer + §1 (Executive Summary, Score, Inventory, Top 3 Recs)
+2. `replace_string_in_file` → append §2 (Tactic Coverage Matrix)
+3. `replace_string_in_file` → append §3 (Technique Deep Dive — largest section)
+4. `replace_string_in_file` → append §4 (Coverage Gap Analysis)
+5. `replace_string_in_file` → append §5 (Operational MITRE Correlation)
+6. `replace_string_in_file` → append §6 + Appendix
+
+Apply SKILL-report.md templates to scratchpad data, following Rules A–D. See [SKILL-report.md](SKILL-report.md) for full section templates and the anchor pattern for each append.
+
+**⛔ Do NOT render §1–§6 in a single `create_file` call.** The output will truncate silently. The scratchpad is ~60 KB; the rendered report exceeds the single-call output budget.
+
+**🔴 ALL 6 APPENDS ARE MANDATORY.** Do NOT stop after §5 — §6 (Recommendations) and the Appendix (Score Methodology, Limitations) are critical and must be appended. After the 6th append, run `grep_search` for `## 6. Recommendations` and `## Appendix` on the report file to verify both exist. If either is missing, append the missing content immediately.
 
 ---
 

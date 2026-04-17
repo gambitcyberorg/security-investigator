@@ -36,11 +36,10 @@ The Threat Pulse skill is a rapid, broad-spectrum security scan designed for the
 5. **[Sample KQL Queries](#sample-kql-queries)** — 12 queries
 6. **[Post-Processing](#post-processing)** — Drift scores, cross-query correlation
 7. **[Query File Recommendations](#query-file-recommendations)**
-8. **[Report Template](#report-template)** — Dashboard format
-9. **[Markdown File Report Template](#markdown-file-report-template)** — Full report structure
-10. **[Known Pitfalls](#known-pitfalls)**
-11. **[Quality Checklist](#quality-checklist)**
-12. **[SVG Dashboard Generation](#svg-dashboard-generation)**
+8. **[Report Template](#report-template)** — Inline + full markdown file structure
+9. **[Known Pitfalls](#known-pitfalls)**
+10. **[Quality Checklist](#quality-checklist)**
+11. **[SVG Dashboard Generation](#svg-dashboard-generation)**
 
 ---
 
@@ -79,27 +78,26 @@ The Threat Pulse skill is a rapid, broad-spectrum security scan designed for the
 1. Read `config.json` for workspace ID and Azure MCP parameters
 2. Call `list_sentinel_workspaces()` to enumerate available workspaces
 3. Use defaults (inline chat, 7d) unless user specified otherwise
-4. **Display scan summary** — Before executing any queries, output the following brief to the user:
+4. **⛔ MANDATORY: Display scan summary** — Before executing any queries, output the following brief to the user **as plain markdown text** (NOT inside a fenced code block, NOT as inline code). Use the exact heading, line breaks, and emoji-prefixed bullet items shown below. Substitute `<WorkspaceName>`, `<WorkspaceId>`, lookback, and output format. Never skip this step — it sets analyst expectations for what's about to run.
 
-```
-🔍 Threat Pulse — Scan Plan
+   🔍 Threat Pulse — Scan Plan
 
-Workspace: <WorkspaceName> (<WorkspaceId>)
-Lookback: <N>d (user-selected or default 7d)
-Output: <Inline / Markdown file / Both>
+   Workspace: \<WorkspaceName\> (\<WorkspaceId\>)
+   Lookback: \<N\>d
+   Output: \<Inline / Markdown file / Both\>
 
-Executing 12 queries across 7 domains:
-  🔴 Incidents      — Open incidents (severity-ranked) + 7d closed summary (Q1, Q2)
-  🔐 Identity       — Identity risk posture, risk event enrichment, auth spray (Q3, Q4)
-  🤖 NonHuman ID    — Service principal behavioral drift (Q5)
-  💻 Endpoint       — Device process drift, rare process chains (Q6, Q7)
-  📧 Email          — Inbound threat snapshot (Q8)
-  🔑 Admin & Cloud  — Cloud app ops, privileged operations (Q9, Q10)
-  🛡️ Exposure       — Critical assets, exploitable CVEs (Q11, Q12)
+   Executing 12 queries across 7 domains:
 
-Data Lake: 1 query | Advanced Hunting: 11 queries in parallel
-Estimated time: ~2–4 minutes
-```
+   🔴 Incidents — Open incidents (severity-ranked) + 7d closed summary (Q1, Q2)
+   🔐 Identity — Identity risk posture, risk event enrichment, auth spray (Q3, Q4)
+   🤖 NonHuman ID — Service principal behavioral drift (Q5)
+   💻 Endpoint — Device process drift, rare process chains (Q6, Q7)
+   📧 Email — Inbound threat snapshot (Q8)
+   🔑 Admin & Cloud — Cloud app ops, privileged operations (Q9, Q10)
+   🛡️ Exposure — Critical assets, exploitable CVEs (Q11, Q12)
+
+   Data Lake: 1 query | Advanced Hunting: 11 queries in parallel
+   Estimated time: ~2–4 minutes
 
 ### Phase 1: Data Lake Query (Q5)
 
@@ -173,18 +171,15 @@ Estimated time: ~2–4 minutes
 | Q6–Q7 | Device in findings | `computer-investigation` | `Investigate device <hostname>` |
 | Q8 | Phishing delivered or malware detected | `email-threat-posture` | `Run email threat posture report` |
 | Q8+Q3 | Phishing recipient appears in Q3 risky users | `authentication-tracing` | `Trace authentication chain for <UPN>` |
-| Q9 | `Compromised Sign-In` user surfaced | `user-investigation` | `Investigate <UPN>` |
-| Q9 | `Compromised Sign-In` user surfaced | `authentication-tracing` | `Trace authentication chain for <UPN>` |
+| Q9 | `Compromised Sign-In` user surfaced | `user-investigation` + `authentication-tracing` | `Investigate <UPN>` / `Trace authentication chain for <UPN>` |
 | Q9 | `Mailbox Read (API)` or `Mail Send (API)` actors | `user-investigation` | `Investigate <UPN>` |
 | Q9 | `Mailbox Read (API)` with Count > 500 | `data-security-analysis` | `Analyze data security events for <actor>` |
 | Q9 | `Conditional Access Change` by human actor | `ca-policy-investigation` | `Investigate CA policy changes by <UPN>` |
 | Q9 | `Exchange Admin/Rule Change` actors | `user-investigation` | `Investigate <UPN>` |
-| Q10 | `MFA-Registration` — user registering/deleting security info | `user-investigation` | `Investigate <UPN>` |
-| Q10 | `AppRegistration` — app create/consent/secret operations | `app-registration-posture` | `Run app registration posture report` |
+| Q10 | `MFA-Registration` user | `user-investigation` | `Investigate <UPN>` |
+| Q10 | `AppRegistration` or `Ownership` operations | `app-registration-posture` | `Run app registration posture report` |
 | Q10 | `AppRegistration` targets containing AI/Agent/Copilot keywords | `ai-agent-posture` | `Run AI agent security audit` |
-| Q10 | `Ownership` — ownership grants on apps/groups/SPNs | `app-registration-posture` | `Run app registration posture report` |
-| Q10 | `RoleManagement` targeting Global/Security Admin roles | `identity-posture` | `Run identity posture report` |
-| Q10 | Bulk `Password` resets from single actor | `identity-posture` | `Run identity posture report` |
+| Q10 | `RoleManagement` Global/Security Admin OR bulk `Password` resets from single actor | `identity-posture` | `Run identity posture report` |
 | Q10 | 3+ categories with same actor in TopActors | `user-investigation` | `Investigate <UPN>` |
 | Q11 | Any `IsVerifiedExposed == true` asset | `exposure-investigation` | `Run exposure report for <hostname>` |
 | Q11–Q12 | Device in findings | `computer-investigation` | `Investigate device <hostname>` |
@@ -199,97 +194,107 @@ Estimated time: ~2–4 minutes
    - IOC prompts: any suspicious IPs/domains from non-✅ findings not already covered by a skill prompt
    - Deduplicate: if a skill prompt and IOC prompt target the same entity, keep only the skill prompt
    - **🔴 NEVER merge a skill prompt (🔍) with a query file prompt (📄) into a single option.** They are different action types with different execution paths.
-   - **⛔ Persist the pool.** Before calling `vscode_askQuestions`, write the final pool (atomic options, in order) to `/memories/session/threat-pulse-drilldowns.md` under a `## Active Prompt Pool` block at the top of the file. Create the file if missing. This block is the source of truth for subsequent iterations — conversation history is not.
-2. **⛔ VALIDATION GATE — before building options, verify each option is atomic:**
-   - Count the action icons (🔍, 📄, 🎯) in each option's Label. If a Label contains **more than one icon**, it is bundled — **split it into separate options immediately**.
-   - Count the skill/query file references (→ arrows) in each option. If an option references **more than one skill or query file**, it is bundled — split it.
-   - Each Label MUST start with exactly ONE icon and describe exactly ONE action targeting ONE entity or ONE query file. No commas separating multiple actions. No multiple `→` targets.
+   - **⛔ Persist the pool.** Write the final pool to `/memories/session/threat-pulse-drilldowns.md` using the **exact template below**. The format banner is mandatory — it makes the ` — ` delimiter contract visible to every iteration and every LLM that edits the file. This memory block is the single source of truth; conversation history is not.
 
-   Call `vscode_askQuestions` using the **Quick Pick Call Contract** below. Apply the contract **identically on every iteration** — initial and all loop-backs.
+   ### Memory File Template (write on first pool creation)
+
+   ````markdown
+   # Threat Pulse Session — <YYYY-MM-DD>
+
+   **Workspace:** <name> (<id>)
+   **Lookback:** <7d|30d|90d>
+   **Scan Start:** <YYYY-MM-DD HH:MM UTC>
+
+   ## Active Prompt Pool
+
+   <!-- FORMAT: `- <ICON> <action> <entity> — Q<N>: <finding> → <skill-or-query-file>` -->
+   <!-- ` — ` (space-emdash-space) is the REQUIRED label/description split delimiter. -->
+   <!-- One icon per line. Order = file position (no numbering). Do not edit this comment block. -->
+
+   - 🔍 Investigate incident #<IncidentId> — Q1: <brief finding>, <N> alerts, <MITRE-ID> → incident-investigation
+   - 🎯 Enrich and investigate IP <IP> — Q4: <N> spray attempts / <N> users → ioc-investigation
+   ...
+
+   ## Pulse Key Findings (quick reference)
+
+   ...
+
+   ## Completed Drill-Downs
+
+   _(none yet)_
+   ````
+2. **Call `vscode_askQuestions` using the Quick Pick Call Contract below.** Apply identically on every iteration.
 
    ### Quick Pick Call Contract
 
    - `header`: `Follow-Up Investigation`
    - `question`: `Select one or more actions to launch (or skip):`
-   - `multiSelect`: `true` *(required every iteration — omitting this is the #1 loop-degradation bug)*
-   - `options`: entity prompts in pool order, then 💾 / 🔄 / Skip appended as the **last three array elements** (in that order, every iteration — including after 🔄 Refresh). 🆕 prompts prepend to the entity portion only; they never push standing options up.
+   - `options`: entity prompts (from memory), then `📋` (if truncated), then `💾 / 🔄 / Skip` as the final three — in that order, every iteration. 🆕 prompts prepend to the entity portion only.
      1. `💾 Save full investigation report` — *Save the complete Threat Pulse session (scan + all drill-downs) as a markdown file*
-     2. `🔄 Refresh recommendations` — *Regenerate the prompt pool based on all findings so far (pulse + drill-downs)*
-     3. `Skip` — *No follow-up — investigation complete* *(always last)*
+     2. `🔄 Refresh prompt pool` — *Rebuild the follow-up prompt list from existing pulse + drill-down findings (does NOT re-run the 12 pulse queries)*
+     3. `Skip` — *No follow-up — investigation complete*
+   - Allowed Label icons: `🔍 📄 🎯 💾 🆕 🔄 📋`. Verdict emoji (🔴🟠🟡🟢✅) are banned from Labels (render as `��` in VS Code quick picks) but fine in Descriptions. Drop 💾 after report is saved; 🔄 and Skip always remain.
 
-   Entity prompt format: `<ONE icon> <ONE action>` / Description: `Q<N>: <finding summary> → <skill or query file>`. Allowed icons: `🔍 📄 🎯 💾 🆕 🔄`. Once a report is saved, drop only 💾 from subsequent iterations — 🔄 and Skip remain.
+   ### 🔴 Pre-Flight Checklist — run mechanically before EVERY `vscode_askQuestions` call
 
-   **🔴 NO PRE-SELECTION — applies to EVERY option, including the first.** Never set `recommended: true` on ANY option — not the first item, not the "most severe" item, not any standing option (💾/🔄/Skip). All items MUST start unchecked. The user chooses what to select. Pre-checking the first item (even unintentionally via `recommended: true` or any other mechanism) is a loop-degradation bug.
+   ```
+   □ 1. memory view → read `## Active Prompt Pool` just now (not earlier)
+   □ 2. Count entity prompts (exclude 💾/🔄/📋/Skip) = N
+   □ 3. Format integrity: every entity line starts with `- ` followed by exactly ONE icon. Any legacy `<N>.` prefix → migrate to `- ` first, re-read, then continue.
+   □ 4. If N > 12: render top 12 (🆕 first, then memory order) + append `📋 Show full prompt pool (N items)`
+   □ 5. For each rendered option: split memory line at FIRST ` — ` → label = text after `- ` up to delimiter, description = right, BYTE-FOR-BYTE (no paraphrasing; if something is missing, edit memory first then re-read)
+   □ 6. Atomic check: each option Label has exactly ONE icon; Description has at most ONE `→ target`
+   □ 7. `multiSelect: true` in call args
+   □ 8. ZERO `recommended` keys anywhere in options[]
+   □ 9. Tail = 💾 / 🔄 / Skip (or 📋 / 💾 / 🔄 / Skip if truncated)
+   □ 10. Print the Pool Receipt line to chat BEFORE invoking the tool
+   ```
+
+   **Pool Receipt** (box 10) — one-liner printed to chat so contract violations are user-visible:
+
+   ```
+   📊 Pool: <N> total / rendering <R> (🆕×<a>, 🔍×<b>, 📄×<c>, 🎯×<d>) / truncated <✔|—> | multiSelect=true ✔ | recommended=0 ✔
+   ```
+
+   If user selects `📋`: re-invoke with all entity prompts (drop `📋`, keep 💾/🔄/Skip tail).
 3. If user selects **Skip** (alone) or pool is empty: end skill execution. Ignore any freeform text if Skip is selected.
 4. **Freeform input routing** — If user types freeform text instead of (or alongside) selecting options, route by matching intent to validated sources. Do NOT write ad-hoc KQL — find the right skill or query file first. Classified actions feed into step 7 alongside any selected options.
    1. **Skill match** — Check the request against copilot-instructions.md Available Skills trigger keywords. "Check vulnerabilities on that device" → `exposure-investigation` or `computer-investigation`. Route as 🔍 — the `read_file` gate in step 7 applies.
    2. **Query file match** — `grep_search` the request's key terms (table names, operations, attack types) against `queries/**`. "Check forwarding rules" → `queries/email/email_threat_detection.md`. Route as 📄.
    3. **Contextual question** — If answerable from data already in context (e.g., "is that IP in other alerts?"), answer directly. If a query is needed, loop back to sub-steps 1–2 to find the right source.
    4. **No match** — If no skill or query file covers the request, follow the KQL Pre-Flight Checklist from copilot-instructions.md (schema validation, table pitfalls, existing query search) before writing any KQL. Never skip the pre-flight for freeform requests.
-5. If user's selection includes **💾 Save full investigation report:**
-   - If no drill-downs have been executed yet, the saved report contains only the Threat Pulse scan results (omit the `Drill-Down Investigation Results` and `Cross-Investigation Correlation` sections; note: "No drill-down investigations were performed in this session.")
-   - Otherwise, read `/memories/session/threat-pulse-drilldowns.md` to recover all accumulated drill-down findings (critical after context compaction)
-   - Compile the complete session — original Threat Pulse dashboard + all drill-down investigation results — into a single markdown file using the [Markdown File Report Template](#markdown-file-report-template)
-   - Save to `reports/threat-pulse/Threat_Pulse_YYYYMMDD_HHMMSS.md`
-   - **Weave drill-down insights into the main report** — do NOT simply append raw drill-down output. See the [Markdown File Report Template](#markdown-file-report-template) for the exact structure, including the `## Drill-Down Investigation Results` section format and the `## Cross-Investigation Correlation` section.
-   - Remove the save option from the pool (report already saved). If no other actions were selected alongside it, **end the loop** — the investigation is complete. Otherwise continue to step 7 with the remaining selections.
-6. If user selects **🔄 Refresh recommendations:**
-   - Read `/memories/session/threat-pulse-drilldowns.md` to gather all accumulated drill-down findings
-   - **Discard the current prompt pool entirely.** Rebuild from scratch by re-running the [Query File Recommendations](#query-file-recommendations) procedure AND the [Phase 4 skill matching table](#phase-4-interactive-follow-up-loop) against the **combined** pulse findings + all drill-down findings. New entities, TTPs, and cross-investigation connections discovered during drill-downs drive the new pool — not just the original 12 pulse queries.
-   - **Why refresh vs incremental `🆕`:** The step 7 New Evidence Scan already adds new IOCs/entities incrementally after each drill-down. Refresh is for **re-ranking and re-matching** — e.g., new MITRE techniques discovered in drill-downs may surface different query files from the manifest, or new entities may now match skill triggers that weren't relevant at initial pool build time.
-   - Deduplicate against completed prompts (never re-offer an already-executed drill-down)
-   - Present the regenerated pool via `vscode_askQuestions` (same format as step 2). The 🔄 option itself stays in the pool — it can be used again after more drill-downs.
-   - If selected alongside other actions, execute the refresh FIRST (to rebuild the pool), then present the new pool — do NOT execute the other selections from the stale pool.
-7. If user selects one or more actions:
-   - Build a **todo list** with one item per selected action, all `not-started`
-   - Execute each action **sequentially** in selection order:
-      - **🔍 Skill prompt — ⛔ `read_file` the child SKILL.md BEFORE writing ANY query.** Load SKILL.md → find Investigation shortcuts → match TP Q# trigger → execute that chain with entity substitution. Writing KQL without a prior `read_file` on the child SKILL.md = schema hallucination. See [🔍 Skill Drill-Down Execution Rule](#-skill-drill-down-execution-rule).
-      - **📄 Query file prompt:** read the query file, then **execute the queries from the file verbatim** with entity value substitution. See [📄 Query File Execution Rule](#-query-file-execution-rule) below.
-      - **IOC prompt:** load `ioc-investigation` skill, execute with the target indicator
-      - Mark each todo `completed` as it finishes
-      - **⛔ MANDATORY session state capture:** After each drill-down completes, append a structured summary to `/memories/session/threat-pulse-drilldowns.md`. Create the file on first drill-down. Append one entry per drill-down:
-        ```
-        ### <N>. <Prompt Label> (<skill-name>, <YYYY-MM-DD HH:MM>)
-        - **Entity:** <target entity>
-        - **Trigger:** Q<N> — <original finding from pulse>
-        - **Key Findings:**
-          - <finding 1 — specific, evidence-cited>
-          - <finding 2>
-          - ...(max 8 bullet points — prioritize high-risk and novel discoveries)
-        - **Risk Assessment:** <emoji> <level> — <1-line justification with evidence>
-        - **Cross-References:** <entities/IOCs that overlap with other drill-downs or original pulse queries>
-        - **Recommendations:** <top 1-3 action items from this drill-down>
-        ```
-        This ensures drill-down insights survive context compaction and are available when the user requests `💾 Save full investigation report`.
-   - Remove all completed prompts from the pool
-   - **⛔ MANDATORY: New Evidence Scan.** Before returning to step 2, review the drill-down results for entities (IPs, users, devices, domains, hashes, CVEs) or MITRE techniques that were **not present in any prior query result or drill-down**. For each new item, assess whether it warrants follow-up — not every new entity is actionable. Add `🆕`-tagged prompts only for items that represent a **meaningful investigative lead** (e.g., a new attacker IP with high abuse score, a critical CVE on an exposed device, a previously unknown compromised account). Prepend `🆕` prompts above existing pool items. If nothing warrants follow-up, proceed — but note: "No actionable new evidence from this drill-down."
-   - **⛔ MANDATORY: Check the manifest before ad-hoc KQL.** For each 🆕 item, consult `.github/manifests/discovery-manifest.yaml` — match by `domains`, `mitre`, or `title` keywords. Only fall back to ad-hoc KQL if nothing matches — and note that in the Description. Validated sources are schema-verified; ad-hoc hunts routinely hit documented column/table pitfalls.
-   - **⛔ Reload pool from session memory, then mutate.** Before returning to step 2: `memory view /memories/session/threat-pulse-drilldowns.md` → take the `## Active Prompt Pool` block verbatim → remove completed prompts → prepend 🆕 prompts → write back via `memory str_replace`. Never reconstruct the pool from findings or conversation history — that silently drops unselected prompts.
-   - **Return to step 2 — call `vscode_askQuestions` again with the full [Quick Pick Call Contract](#-quick-pick-call-contract--apply-on-every-iteration).** `multiSelect: true` and all three standing options (💾 / 🔄 / Skip) MUST be present every iteration — they are not one-shot. Do NOT render a markdown table/numbered list as a substitute. **Updated pool = prior pool − completed prompts + prepended 🆕 prompts.** Untouched prompts carry forward verbatim (same Labels, same Descriptions). Full rebuild is reserved for `🔄 Refresh recommendations`.
+5. **💾 Save full investigation report selected:**
+   - Read `/memories/session/threat-pulse-drilldowns.md` (critical after context compaction) and compile pulse dashboard + all drill-down findings into a single markdown file using the [Report Template](#report-template) (file mode). Weave drill-down insights into the main report — do NOT just append raw output.
+   - If no drill-downs were executed yet, omit the `Drill-Down Investigation Results` and `Cross-Investigation Correlation` sections with note: "No drill-down investigations were performed in this session."
+   - Save to `reports/threat-pulse/Threat_Pulse_YYYYMMDD_HHMMSS.md`. Drop 💾 from subsequent pool iterations.
+6. **🔄 Refresh prompt pool selected — prompt list ONLY, no KQL execution.** Refresh rebuilds the follow-up list; it does NOT re-run Q1–Q12 and does NOT re-run drill-downs. Discard the current pool, rebuild by re-applying [Query File Recommendations](#query-file-recommendations) and the [skill matching table](#phase-4-interactive-follow-up-loop) against pulse findings + all drill-down findings in memory. Deduplicate against completed prompts. If selected alongside other actions, refresh FIRST, then present the new pool before executing the others.
+7. **One or more actions selected — execute sequentially.** Build a todo list (one item per action). For each:
+   - **🔍 Skill prompt:** ⛔ `read_file` the child SKILL.md BEFORE writing ANY query → find Investigation shortcut → match TP Q# trigger → execute with entity substitution. Writing KQL without the prior `read_file` = schema hallucination. See [🔍 Skill Drill-Down Execution Rule](#-skill-drill-down-execution-rule).
+   - **📄 Query file prompt:** read the file and execute its queries **verbatim** with entity substitution. See [📄 Query File Execution Rule](#-query-file-execution-rule).
+   - **🎯 IOC prompt:** load `ioc-investigation` skill with the target indicator.
 
-**Prompt pool rules:**
-- Completed prompts are removed — never re-offered
-- New evidence prompts are prepended (freshest leads first), tagged `🆕`
-- Untouched prompts carry forward verbatim between iterations — do NOT reword, re-rank, or hand-pick a subset (full rebuild is reserved for `🔄 Refresh recommendations`)
-- **🔴 PROHIBITED:** Presenting a pool to the user that was not just loaded from `/memories/session/threat-pulse-drilldowns.md` (except the very first iteration, which writes to it). Rebuilding from findings drops prompts.
-- **🔴 PROHIBITED:** Using verdict emojis (🔴🟠🟡🟢✅) in Quick Pick Labels — they render as `��` in VS Code. Use plain text like `[Escalate]` or allowed icons (🔍 📄 🎯 💾 🆕 🔄) instead.
-- Loop ends when user selects Skip or pool empties (`✅ All follow-up actions completed.`)
-- **🔴 PROHIBITED:** Rendering the prompt pool as a markdown table, numbered list, or plain text instead of calling `vscode_askQuestions`. Every iteration — including after the first follow-up completes — MUST use the interactive question tool so options are clickable. This is the #1 loop-breaking mistake.
-- **🔴 PROHIBITED: Never set `recommended: true` on any option — including the first item.** Pre-checking imposes LLM judgment on user priorities. ALL options must render unchecked; the user chooses. Convey severity via Label emoji prefix (`🔴`/`🟠`/`🟡`), not pre-selection.
-- **🔴 PROHIBITED:** Returning to step 2 after a drill-down without executing the New Evidence Scan (step 7, "New Evidence Scan" bullet). Skipping this scan is the #1 reason drill-down leads go uninvestigated — new IPs, CVEs, and devices discovered during drill-downs silently disappear from the pool.
-- **🔴 ATOMIC OPTIONS — ONE action per selectable item.** Each option Label MUST contain exactly ONE icon (🔍, 📄, or 🎯) and map to exactly ONE executable action: one skill + one entity, OR one query file + one hunt prompt. When cross-query correlations link multiple findings (e.g., Q3+Q9 correlating a user with both risky identity and inbox rule manipulation), generate **separate options** for each distinct action — do NOT bundle them into a single option. Note the correlation in the **Description** field to preserve context, but keep the Label and action singular.
+   After each drill-down, append a session-state entry to `/memories/session/threat-pulse-drilldowns.md` under `## Completed Drill-Downs`:
+   ```
+   ### <N>. <Prompt Label> (<skill-name>, <YYYY-MM-DD HH:MM>)
+   - **Entity:** <target entity>
+   - **Trigger:** Q<N> — <original finding>
+   - **Key Findings:** <1–8 bullets, evidence-cited>
+   - **Risk Assessment:** <emoji> <level> — <1-line justification>
+   - **Cross-References:** <overlaps with other drill-downs or pulse queries>
+   - **Recommendations:** <top 1–3 actions>
+   ```
+   This survives context compaction and feeds the `💾 Save` report.
 
-  **Self-check before presenting:** For each option, verify: (1) the Label has exactly ONE icon prefix, (2) there is NO comma separating a second action, (3) the Description has exactly ONE `→` pointing to ONE skill or query file. If any check fails, split the option.
+   **Before returning to step 2 — MANDATORY, in order:**
+   1. **New Evidence Scan** — review drill-down results for entities/TTPs not present in prior findings. Add 🆕 prompts only for meaningful leads (new attacker IP with high abuse, new critical CVE on exposed device, etc.). If nothing warrants follow-up, note: *"No actionable new evidence."*
+   2. **Manifest check** — for each 🆕 item, consult `.github/manifests/discovery-manifest.yaml` (match by `domains`, `mitre`, or `title`). Only fall back to ad-hoc KQL if nothing matches.
+   3. **Reload → mutate → write back** — `memory view` `## Active Prompt Pool` → delete the completed bullet line(s) → prepend 🆕 prompts as new bullet lines (`- <ICON> ...`) → `memory str_replace`. Every entity line is a bullet — no ordinals, so adding/removing items never requires renumbering. **Never reconstruct the pool from conversation history.**
+   4. **Return to step 2.** Never render the pool as a markdown table/list instead of calling `vscode_askQuestions`.
 
-  **❌ PROHIBITED — bundled multi-action option (this is the #1 follow-up mistake):**
-  `🔍 Investigate user cameron@contoso.com - Q3+Q9: mcasSuspiciousInboxManipulationRules + anonymizedIPAddress (5 high) + New-InboxRule creation — potential email exfiltration → user-investigation, 📄 Hunt delivered phishing emails → queries/email/email_threat_detection.md`
+**Atomic options — ONE action per option.** Each option maps to ONE skill + ONE entity, OR ONE query file. When correlations link findings (e.g., Q3+Q9 same user), generate **separate options**, put the correlation in the Description. Bundling multiple actions/arrows in a single option is the #1 follow-up mistake.
 
-  **❌ ALSO PROHIBITED — multiple skills/query files in Description:**
-  Description: `Q3+Q9: ... → user-investigation, queries/email/email_threat_detection.md`
-
-  **✅ CORRECT — one action per option, correlation context in Description only:**
-  - Option 1 — Label: `🔍 Investigate user cameron@contoso.com` / Description: `Q3+Q9: Identity risk (AtRisk, aiCompoundAccountRisk + anonymizedIPAddress) + inbox rule manipulation — potential email exfiltration → user-investigation`
-  - Option 2 — Label: `📄 Hunt delivered phishing emails and recipients` / Description: `Q8: Trace the 4 delivered phishing emails → queries/email/email_threat_detection.md`
+✅ Correct: `🔍 Investigate user cameron@contoso.com` / desc `Q3+Q9: identity risk + inbox rule manipulation → user-investigation`
+❌ Wrong: `🔍 Investigate cameron ... → user-investigation, 📄 Hunt phishing → queries/email/...`
 
 ### 📄 Query File Execution Rule
 
@@ -334,13 +339,7 @@ When executing a skill drill-down, **load the child skill's SKILL.md** and use i
 
 After every non-✅ drill-down that surfaces actionable entities, append a **`🎬 Take Action`** section with **direct portal links** (single entities) or **Advanced Hunting queries** (bulk entities). Ref: [Take action on AH results](https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-take-action)
 
-**⛔ MANDATORY:** Every `🎬 Take Action` heading in the output MUST be immediately followed by this warning blockquote:
-
-```
-> ⚠️ **AI-generated content may be incorrect. Always review Take Action queries and portal links for accuracy before executing remediation actions.**
-```
-
-Never omit this warning. It must appear below EVERY `🎬 Take Action` heading, not just the first one.
+Every `🎬 Take Action` heading in the output — this one and every subsequent one — MUST be immediately followed by the AI-content warning blockquote above.
 
 **Skip when:** verdict is ✅/🔵, or the action was already taken (e.g., ZAP purged emails).
 
@@ -357,9 +356,12 @@ Never omit this warning. It must appear below EVERY `🎬 Take Action` heading, 
 
 **⛔ PROHIBITED:** Generating an AH query for a single entity when a direct portal link would suffice. AH Take Action is for **bulk remediation** — for a single entity, link directly to the portal page where the analyst can act.
 
-**Where to get the IDs for single-entity links:**
-- **User ObjectId (OID):** From Graph API (`/v1.0/users/<UPN>?$select=id`) or IdentityInfo `AccountObjectId` column — already retrieved during drill-down
-- **MDE DeviceId:** From `DeviceInfo` table (`DeviceId` column) or `GetDefenderMachine` API — already retrieved during computer-investigation drill-down
+**ID sources (agent retrieves silently — never ask the user):**
+- **User OID:** Graph `/v1.0/users/<UPN>?$select=id` or `IdentityInfo.AccountObjectId`
+- **MDE DeviceId:** `DeviceInfo.DeviceId` or `GetDefenderMachine` API
+- **SHA / NetworkMessageId / etc.:** from the originating AH table
+
+⛔ Never emit prompts like *"Retrieve the DeviceId"* — run the lookup and emit the finished link in the same turn.
 
 #### Required Columns per Entity Type
 
@@ -393,9 +395,13 @@ EmailEvents
 → *Take actions →* Move to mailbox folder, Delete email (soft/hard), Submit to Microsoft, Initiate automated investigation
 
 **💻 Single Device — direct portal link:**
-When acting on a **single device**, link directly to its Defender XDR machine page. The `DeviceId` comes from the `DeviceInfo` table or `GetDefenderMachine` API (already retrieved during `computer-investigation` drill-down). **If `DeviceId` is not already in context** (e.g., after an `exposure-investigation` or `ioc-investigation` drill-down), query `DeviceInfo | where DeviceName startswith '<name>' | summarize arg_max(Timestamp, *) by DeviceId | project DeviceId` before generating the link. **NEVER fabricate a device URL** — `?DeviceName=` query parameters, `/machines?` search URLs, and bare hostnames in the path are all invalid.
+Link to the Defender XDR machine page. If `DeviceId` isn't in context, look it up yourself:
 
-`[<DeviceName>](https://security.microsoft.com/machines/v2/<MDE_DeviceId>?tid=<tenant_id>)`
+```kql
+DeviceInfo | where DeviceName startswith '<name>' | summarize arg_max(Timestamp, *) by DeviceId | project DeviceId
+```
+
+Then emit: `[<DeviceName>](https://security.microsoft.com/machines/v2/<DeviceId>?tid=<tenant_id>)`. Never fabricate URLs with `?DeviceName=`, `/machines?`, or bare hostnames.
 
 → Machine page → *Response actions* → Isolate device, Collect investigation package, Run antivirus scan, Initiate investigation, Restrict app execution
 
@@ -480,61 +486,38 @@ DeviceNetworkEvents
 | **URL** | `https://security.microsoft.com/url/overview?url=<url-encoded-URL>&tid=<tenant_id>` | `[example.com/path](https://security.microsoft.com/url/overview?url=http%3A%2F%2Fexample.com%2Fpath&tid=<tenant_id>)` |
 | **IP** | `https://security.microsoft.com/ip/<IP>/overview?tid=<tenant_id>` | `[<IP>](https://security.microsoft.com/ip/<IP>/overview?tid=<tenant_id>)` |
 | **File Hash** | `https://security.microsoft.com/file/<SHA1-or-SHA256>/?tid=<tenant_id>` | `[da5e459...b1bb1e](https://security.microsoft.com/file/da5e45915354850261cf0e87dc7af19597b1bb1e/?tid=<tenant_id>)` |
-| **Device** | `https://security.microsoft.com/machines/v2/<MDE_DeviceId>?tid=<tenant_id>` | `[alpine-srv1](https://security.microsoft.com/machines/v2/6b02befec5724a3b79184d006ac417eda6fb05a6?tid=<tenant_id>)` |
+| **Device** | `https://security.microsoft.com/machines/v2/<MDE_DeviceId>?tid=<tenant_id>` | `[<DeviceName>](https://security.microsoft.com/machines/v2/<MDE_DeviceId>?tid=<tenant_id>)` |
 | **SPN / Non-Human Identity** | `https://security.microsoft.com/identity-inventory?tab=NonHumanIdentities&tid=<tenant_id>` | `[Non-Human Identities Inventory](https://security.microsoft.com/identity-inventory?tab=NonHumanIdentities&tid=<tenant_id>)` |
 
 **User fallbacks:** `?upn=<UPN>` when ObjectId is unavailable; `?sid=<SID>&accountName=<Name>&accountDomain=<Domain>` for on-prem AD.
 
 **Device ID source:** `DeviceId` from the `DeviceInfo` AH table or the `id` field from `GetDefenderMachine` API. This is the MDE machine identifier — NOT the Entra Device Object ID (which is different). The computer-investigation skill retrieves this in Step 1b.
 
-#### Entity Display Decision — Portal Link vs Defang
+**🔴 Portal URL Allowlist — No Invented Paths.** The 7 patterns above plus `/v2/advanced-hunting?tid=<tenant_id>` are the ONLY `security.microsoft.com` URLs you may emit. For any other action (Custom Indicators, Safe Links policy, Email Explorer, CA policy editor, Secure Score, etc.), write a textual breadcrumb — e.g., *"Defender XDR → Settings → Endpoints → Indicators → URLs/Domains → Add item"*. Never guess a path from memory.
 
-**Defanging and portal linking are MUTUALLY EXCLUSIVE. For every malicious domain, URL, or IP in a table, apply exactly ONE treatment:**
+#### Entity Display — Portal Link vs Defang (Mutually Exclusive)
 
 | Context | Treatment | Example |
-|---------|-----------|----------|
-| **Action / recommendation / Take Action table** | Wrap entity name in Defender XDR portal link. Do NOT defang. | `[evil.com](https://security.microsoft.com/domains/overview?urlDomain=evil.com&tid=<tenant_id>)` |
-| **Data / results table showing raw query output** | Defang the entity. Do NOT link to portal. | `evil[.]com` |
+|---------|-----------|---------|
+| **Action / Take Action / recommendation tables** | Wrap entity name in portal link (from table above). Never defang. | `[evil.com](https://security.microsoft.com/domains/overview?urlDomain=evil.com&tid=<tenant_id>)` |
+| **Data / results tables (raw query output)** | Defang entity as plain text. Never portal-link. | `hxxps://evil[.]com/path` |
 
-⛔ **Action tables: use portal links, NOT defanging.** Writing `evil[.]com` in an action table is wrong — write `[evil.com](https://security.microsoft.com/domains/overview?urlDomain=evil.com&tid=<tenant_id>)` instead. The markdown link target points to `security.microsoft.com`, so VS Code won't auto-linkify to the malicious domain. If you see `[.]` in an Entity cell, you applied the wrong rule.
+Defang rules: `http://` → `hxxp://`, `https://` → `hxxps://`, `.` in domain → `[.]`. VS Code auto-linkifies anything URL-shaped, which is why defanging is required in data tables. Conversely, a portal-linked entity has the portal URL as the link target, so linkification is safe \u2014 defanging would just break the link.
 
-⛔ **Data tables: use defanging, NOT portal links.** Writing bare `evil.com` in a results table is wrong — VS Code auto-linkifies it. Write `evil[.]com` instead.
-
-#### URL Defanging — Prevent Accidental Clicks
-
-**When displaying URLs/domains as plain text (not wrapped in a Defender XDR portal link), DEFANG them** to prevent VS Code from rendering them as clickable links. VS Code auto-linkifies anything that looks like a URL — including malicious phishing URLs in investigation results.
-
-| Original | Defanged |
-|----------|----------|
-| `http://` | `hxxp://` |
-| `https://` | `hxxps://` |
-| `.` in domain | `[.]` |
-
-**Example:** `robiox.com.py/users/page` → `robiox[.]com[.]py/users/page`
-
-**When to defang:** Data tables showing threat URLs/domains from query results (e.g., UrlClickEvents, EmailEvents phishing URLs, CloudAppEvents suspicious domains) where the value is displayed as-is, not linked to a Defender XDR portal page.
-
-**When NOT to defang:** When the entity appears in an **action or recommendation table** — these MUST use clickable Defender XDR portal links instead (see Portal Links table above). Defanging a portal-linked entity breaks the link. The two treatments are mutually exclusive.
-
-#### Rules
+#### Rules Summary
 
 | Rule | Status |
 |------|--------|
-| Action table with plain-text entities instead of clickable portal links | ❌ **PROHIBITED** |
-| Defanging entities (`[.]`) in action tables instead of portal links | ❌ **PROHIBITED** |
-| Adding a separate "Portal" column instead of making the entity name the link | ❌ **PROHIBITED** |
-| Raw (non-defanged) malicious URLs/domains as plain text in results tables | ❌ **PROHIBITED** |
-| AH query for a single entity when a direct portal link suffices | ❌ **PROHIBITED** |
-| Non-✅ drill-down surfaces actionable entities but no Take Action block | ❌ **PROHIBITED** |
-| Take Action query missing a required column | ❌ **PROHIBITED** |
-| Email Take Action query using `project` (strips columns needed by portal actions) | ❌ **PROHIBITED** |
-| `🎬 Take Action` heading without the AI-generated content warning immediately below | ❌ **PROHIBITED** |
-| AH query in Take Action without BOTH a ` ```kql ` code block AND a plain `Run in Advanced Hunting` portal link | ❌ **PROHIBITED** |
+| Every `🎬 Take Action` heading immediately followed by the AI-content warning blockquote | ✅ **REQUIRED** |
+| Single entity \u2192 direct portal link (never an AH query) | ✅ **REQUIRED** |
+| 2+ entities \u2192 AH query with Take Actions, all required columns present, no `project` on emails | ✅ **REQUIRED** |
+| Every AH query includes BOTH a ` ```kql ` code block AND a plain `[Run in Advanced Hunting](https://security.microsoft.com/v2/advanced-hunting?tid=<tenant_id>)` link below it | ✅ **REQUIRED** |
+| Action tables: entity = clickable portal link (from the 7 approved patterns). No separate "Portal" column, no defanging. | ✅ **REQUIRED** |
+| Data tables: entity = defanged plain text. No portal linking. | ✅ **REQUIRED** |
+| Textual breadcrumb (*"Defender XDR → …"*) when no approved portal URL pattern covers the action | ✅ **REQUIRED** |
+| Emitting any `security.microsoft.com` URL outside the 7 approved patterns + `/v2/advanced-hunting` | ❌ **PROHIBITED** |
 | Generating gzip/base64-encoded AH deep links via `kql_to_ah_url.py` for output | ❌ **PROHIBITED** |
-| Single entity: direct portal link + PowerShell commands | ✅ **REQUIRED** |
-| Bulk entities (2+): AH query with Take actions, values as clickable columns | ✅ **REQUIRED** |
-| Every `🎬 Take Action` heading followed by: `> ⚠️ **AI-generated content may be incorrect. Always review Take Action queries and portal links for accuracy before executing remediation actions.**` | ✅ **REQUIRED** |
-| AH Take Action queries include a plain `[Run in Advanced Hunting](https://security.microsoft.com/v2/advanced-hunting?tid=<tenant_id>)` link below the code block (no encoded query) | ✅ **REQUIRED** |
+| Non-✅ drill-down surfaces actionable entities but no Take Action block | ❌ **PROHIBITED** |
 
 ---
 
@@ -610,22 +593,14 @@ OpenIncidents
 | take 10
 ```
 
-**Purpose:** Identifies the top 10 open incidents using severity-ranked backfill — Critical and High incidents always surface first, with Medium and Low filling remaining slots when fewer than 10 High/Critical exist. This ensures the query is useful in both large environments (1,000+ High incidents) and small environments (a handful of Medium/Low). Returns `TotalHighCritical` and `TotalAll` on every row so the report header adapts: "Showing 10 of {TotalAll} open incidents ({TotalHighCritical} High/Critical)". Joins SecurityAlert for MITRE tactic and technique ID visibility, plus extracts `Accounts` (UPNs or AAD ObjectIds) and `Devices` (hostnames) from alert entities for cross-query correlation with Q3 (identity risk), Q6/Q7 (endpoint drift/rare processes), Q4 (spray targets), and Q12 (CVE exposure). Extracts `Tags` from incident labels (both AutoAssigned ML classifications like `Credential Phish`, `BEC Fraud`, `Defender Experts` and User-applied SOC workflow tags). Flags unassigned incidents (empty OwnerUPN).
+**Purpose:** Top 10 open incidents with severity-ranked backfill (Critical→High→Medium→Low). In large envs, all slots fill with High/Critical; small envs backfill with Medium/Low. `TotalHighCritical` and `TotalAll` drive the adaptive report header ("Showing 10 of {TotalAll} open incidents ({TotalHighCritical} High/Critical)"). Joins SecurityAlert for MITRE tactics/techniques and extracts `Accounts` (UPN or AAD ObjectId, lowercased), `Devices` (hostname, lowercased), and `Tags` (from `Labels` — both AutoAssigned ML classifications and User-applied SOC tags) — each capped at 5 per incident — for cross-query correlation with Q3/Q4/Q6/Q7/Q12. Flags unassigned incidents (empty `OwnerUPN`).
 
-**Sort logic:** `SevRank asc, bin(CreatedTime, 1d) desc, AlertCount desc` — severity first (Critical=0, High=1, Medium=2, Low=3), then by calendar day (newest first within each severity tier), then by alert count (most complex first within each day). In large environments, all 10 slots are High/Critical and behavior is identical to the previous query. In small environments, the severity column makes the backfill visible.
-
-**Entity extraction rules:**
-- **Accounts:** Prefers `Name@UPNSuffix` (lowercased); falls back to `AadUserId` (GUID) when no UPN suffix. Service accounts without domains naturally drop.
-- **Devices:** `HostName` (lowercased) for case-insensitive matching against Q6/Q7 `DeviceName`.
-- **Tags:** Extracted from `Labels` (dynamic array of `{labelName, labelType}` objects). Includes both `AutoAssigned` (Defender ML) and `User` (SOC analyst/automation rule) tags.
-- Accounts, Devices, and Tags each capped at 5 per incident to limit output size.
-
-**Output columns:** `TotalHighCritical` (count of open High/Critical incidents), `TotalAll` (count of all open incidents) — both used for the adaptive "Showing 10 of N" header, not rendered as table columns. `ProviderIncidentId` (linked via `PortalUrl`), `Title`, `Severity`, `SevRank` (sort key, not rendered), `AgeDisplay` (relative time: "3m ago", "2h ago", "1d ago"), `AlertCount`, `OwnerUPN`, `Tactics`, `Techniques`, `Accounts`, `Devices`, `Tags`. `AlertNames` and `CreatedTime` are projected for LLM context but not rendered as table columns.
+**Sort:** `SevRank asc, bin(CreatedTime, 1d) desc, AlertCount desc` — severity tier first, then calendar day (newest first), then complexity within each day.
 
 **Verdict logic:**
-- 🔴 Escalate: 5+ new High/Critical incidents in 24h, or any incident with `AlertCount > 50`, or any unassigned High/Critical incident with CredentialAccess/LateralMovement tactics
-- 🟠 Investigate: Any unassigned High/Critical incident, or `AlertCount > 10`, or multiple High/Critical incidents in <6h
-- 🟡 Monitor: Only Medium/Low incidents exist (no High/Critical), or High/Critical incidents exist but are assigned and low alert count
+- 🔴 Escalate: 5+ new High/Critical in 24h, OR any incident with `AlertCount > 50`, OR any unassigned High/Critical with CredentialAccess/LateralMovement tactics
+- 🟠 Investigate: Any unassigned High/Critical, OR `AlertCount > 10`, OR multiple High/Critical in <6h
+- 🟡 Monitor: Only Medium/Low incidents exist (no High/Critical), OR High/Critical assigned with low alert count
 - ✅ Clear: 0 open incidents of any severity (Q2 closed summary still renders as context)
 
 ---
@@ -1091,7 +1066,7 @@ CloudAppEvents
 - 🟡 Monitor: Only `Mailbox Read (Client)` or `Mail Send (Client)` activity, OR low-count `Set-Mailbox` from system actors
 - ✅ Clear: 0 results across all categories
 
-**Drill-down:** Use `user-investigation` skill for actors in `Compromised Sign-In`, `Mailbox Read (API)`, or `Mail Send (API)` categories. Use `ca-policy-investigation` skill for `Conditional Access Change` findings. **⚠️ When drilling down on ANY Exchange-related Q9 finding, ALWAYS also query `OfficeActivity` (Exchange workload)** — CloudAppEvents and OfficeActivity are **complementary, not alternatives**. CloudAppEvents captures ActionType-based summaries and `AccountDisplayName`, but OfficeActivity provides the full `Parameters` JSON (forwarding targets: `ForwardTo`, `RedirectTo`, `ForwardingSmtpAddress`), per-operation `ClientIP`, and a broader set of Exchange audit operations — including `MoveToDeletedItems` (evidence destruction), `SoftDelete`/`HardDelete`, and `MailboxLogin` — that reveal post-compromise persistence, exfiltration, and lateral phishing patterns CloudAppEvents alone cannot surface. Query pattern: `OfficeActivity | where TimeGenerated > ago(Nd) | where OfficeWorkload == "Exchange" | where UserId =~ '<UPN>' | project TimeGenerated, Operation, ClientIP, Parameters, SessionId | order by TimeGenerated desc`. See `queries/email/email_threat_detection.md` for verified OfficeActivity query patterns.
+**Drill-down:** Use `user-investigation` for actors in `Compromised Sign-In`, `Mailbox Read (API)`, or `Mail Send (API)` categories. Use `ca-policy-investigation` for `Conditional Access Change`. **For any Exchange-related Q9 finding, also query `OfficeActivity | where OfficeWorkload == "Exchange"`** — CloudAppEvents only surfaces ActionType summaries; OfficeActivity carries the full `Parameters` JSON (`ForwardTo` / `RedirectTo` / `ForwardingSmtpAddress`), per-operation `ClientIP`, and ops like `MoveToDeletedItems` / `SoftDelete` / `HardDelete` / `MailboxLogin` that reveal post-compromise forensics. See `queries/email/email_threat_detection.md` and the CloudAppEvents / OfficeActivity entries in `copilot-instructions.md` Known Table Pitfalls.
 
 ---
 
@@ -1276,16 +1251,14 @@ After all queries complete, check these correlation patterns and escalate priori
 
 ## Query File Recommendations
 
-Use the **discovery manifest** (`.github/manifests/discovery-manifest.yaml`) to match findings to downstream query files and skills. Contains `title`, `path`, `domains`, `mitre`, and `prompt` only (~500 lines). Auto-generated by `python .github/manifests/build_manifest.py`.
+Use `.github/manifests/discovery-manifest.yaml` (auto-generated by `python .github/manifests/build_manifest.py`) to match findings to downstream query files and skills. Contains `title`, `path`, `domains`, `mitre`, `prompt`.
 
-Tier depth follows the Rule 8 table — skip entirely when all verdicts are ✅.
+**Skip entirely when all verdicts are ✅.** Tier depth follows the Rule 8 table.
 
-### Domain-to-Query Mapping
+### Query-to-Domain Map
 
-Each threat-pulse query group maps to a domain tag. Non-✅ domains drive manifest lookups:
-
-| Query Group | Domain Tag |
-|-------------|-----------|
+| Query Group | Domain Tag(s) |
+|-------------|---------------|
 | Q1, Q2 (Incidents) | `incidents` |
 | Q3, Q4 (Identity) | `identity` |
 | Q5 (SPN Drift) | `spn` |
@@ -1294,210 +1267,118 @@ Each threat-pulse query group maps to a domain tag. Non-✅ domains drive manife
 | Q9, Q10 (Admin & Cloud) | `admin`, `cloud` |
 | Q11, Q12 (Exposure) | `exposure` |
 
-### Search Procedure (Manifest-Based)
+Valid tags: `incidents`, `identity`, `spn`, `endpoint`, `email`, `admin`, `cloud`, `exposure`.
 
-1. **Read the manifest:** Load `.github/manifests/discovery-manifest.yaml`
-2. **Collect active domains:** For each non-✅ verdict, note the domain tag(s) from the table above
-3. **Filter query files:** From `manifest.queries`, select entries where `domains` contains ANY of the active domain tags
-4. **Rank results (three-tier):**
-   - **Primary:** Number of matching domain tags (multi-domain match ranks higher)
-   - **Secondary:** MITRE technique overlap — compare technique IDs from Q1/Q2 `Techniques` arrays (e.g., `T1566`, `T1078`) directly against the manifest entry's `mitre` field. Exact string match — no tactic-to-technique translation needed
-   - **Tertiary:** Keyword overlap — match entity names, process names, CVE IDs, or ActionTypes from findings against manifest entry titles and paths
-5. **Select top N:** 🔴/🟠 verdicts: 3–5 files. 🟡-only: 1–2 files
-6. **Format links:** Use the `title` and `path` from the manifest entry to build clickable links (see [Report Output Block](#report-output-block) below for format)
+### Procedure
 
-### Skill Suggestions (Manifest-Based)
+For each non-✅ verdict, collect its domain tag(s), then:
 
-For **all non-✅ tiers** (not just 🟡), the manifest also provides skill drill-down suggestions:
+1. **Query files** — filter `manifest.queries` where `domains` contains ANY active tag. Rank by (a) number of matching tags, (b) MITRE technique overlap with Q1/Q2 `Techniques` (exact string match on `mitre` field), (c) keyword overlap (entities, process names, CVE IDs, ActionTypes) against title/path. Select top 3–5 files for 🔴/🟠, 1–2 for 🟡-only.
+2. **Skills** — filter `manifest.skills` where `domains` matches. Substitute actual entity values into the `prompt` template's `{entity}` placeholder. 🔴/🟠: include all matches as drill-down options; 🟡-only: limit to 3. Skills without `domains` (tooling/visualization) are never auto-suggested.
 
-1. **Filter skills:** From `manifest.skills`, select entries where `domains` contains ANY of the active domain tags
-2. **Use prompt template:** Each skill has a `prompt` field with `{entity}` placeholder — substitute the actual entity value from findings (username, device name, SPN, IP, CVE ID)
-3. **Tier limits:** 🔴/🟠: include all matching skills as drill-down options. 🟡-only: limit to 3 skills
+### Report Output
 
-**Skills without `domains`** (tooling/visualization) are never auto-suggested — they are invoked explicitly by other skill workflows.
+Insert `📂 Recommended Query Files` after **🎯 Recommended Actions**. Include a `🔧 Suggested Skill Drill-Downs` sub-section with manifest skill prompts (entity-substituted).
 
-### Adding New Query Files or Skills
-
-When you create a new query file or skill, the manifest self-maintains:
-
-1. Add `**Domains:** <tag1>, <tag2>` to the query file metadata header (after `**MITRE:**`)
-2. Add `threat_pulse_domains: [<tag1>]` and `drill_down_prompt: '<prompt>'` to skill YAML frontmatter
-3. Run `python .github/manifests/build_manifest.py` to regenerate + validate the manifest
-4. The validator flags missing fields — no silent failures
-
-Valid domain tags: `incidents`, `identity`, `spn`, `endpoint`, `email`, `admin`, `cloud`, `exposure`
-
-### Report Output Block
-
-Insert `📂 Recommended Query Files` section after **Recommended Actions** in the report.
-
-**⛔ Use numbered list format, NOT a table** — links inside table cells don't render clickable in VS Code chat.
+**⛔ Numbered list, NOT table** — links inside table cells don't render clickable in VS Code chat.
 
 **Format:** `1. **[<Title>](queries/<subfolder>/<file>.md)** — Q<N>: <finding> — 💡 *"<entity-specific prompt>"*`
 
-**Rules:**
-- Each prompt MUST reference specific entities/IOCs/TTPs from findings — no generic placeholders
-- Link display text = manifest `title`, link target = manifest `path` (forward slashes only)
-- When no matching files found, suggest authoring new queries
-- Include `🔧 Suggested Skill Drill-Downs` sub-section with manifest skill prompts (substitute `{entity}` with actual values)
+- Link text = manifest `title`, target = manifest `path` (forward slashes).
+- Prompts MUST reference specific entities/IOCs/TTPs from findings — no generic placeholders.
+- When no matching files: suggest authoring new queries.
+
+### Adding New Query Files or Skills
+
+1. Query files: add `**Domains:** <tag1>, <tag2>` to metadata header (after `**MITRE:**`).
+2. Skills: add `threat_pulse_domains: [<tag>]` and `drill_down_prompt: '<prompt>'` to YAML frontmatter.
+3. Run `python .github/manifests/build_manifest.py` — validator flags missing fields.
 
 ---
 
 ## Report Template
 
-**Output modes:** Inline chat (default), markdown file (`reports/threat-pulse/Threat_Pulse_YYYYMMDD_HHMMSS.md`), or both. Default to inline unless user requests otherwise.
+**Output modes:**
+- **Inline chat** (default) — render in chat. Truncate data tables to 10 rows; omit Drill-Down, Cross-Investigation, and Investigation Timeline sections when no drill-downs have executed.
+- **Markdown file** — triggered by `💾 Save full investigation report` in Phase 4. Full data tables, no row limits. Path: `reports/threat-pulse/Threat_Pulse_YYYYMMDD_HHMMSS.md`. Source data: pulse results from context + `/memories/session/threat-pulse-drilldowns.md` (authoritative after context compaction).
 
-**Report structure (all modes):**
+**Verdicts:** 🔴 Escalate | 🟠 Investigate | 🟡 Monitor | ✅ Clear | 🔵 Informational | ❓ No Data
 
-1. **Header:** `# 🔍 Threat Pulse — <Workspace> | <Date>` with workspace ID, scan duration, query count
-2. **Dashboard Summary:** 12-row table — one row per query (Q1, Q2, Q3, Q4–Q12), columns: `#`, `Domain`, `Status` (verdict emoji), `Key Finding` (1-line). Verdicts: 🔴 Escalate | 🟠 Investigate | 🟡 Monitor | ✅ Clear | 🔵 Informational | ❓ No Data
-3. **Detailed Findings:** One section per query — EVERY query gets a section (no skipping). Data tables (max 10 rows inline, unlimited in file). Q1 incidents must include `[#<id>](https://security.microsoft.com/incidents/<ProviderIncidentId>?tid=<tenant_id>)` links. Q2 closed summary always renders after Q1.
-4. **Cross-Query Correlations:** Table of correlated findings per Post-Processing rules, or `✅ No correlations detected`.
-5. **🎯 Recommended Actions:** Prioritized table with action, trigger query, and drill-down skill.
-6. **📂 Recommended Query Files:** Per the Report Output Block procedure above. For 🟡-only verdicts, use "📂 Proactive Hunting Suggestions" header instead. Omit entirely when all ✅.
+- **❓ No Data** — query returned table resolution error or timeout. Report the error and table. Treat as monitoring gap.
+- **🔵 Informational** — neutral context (e.g., Q2 with 0 closures, Q6 with DriftScore < 80). No action needed.
+- **Zero results format:** `✅ No <type> detected in the last <N>d. Checked: <table> (0 matches)`
 
-**Q1 column format:** `| Incident | Sev | Title | Age | Alerts | Owner | Tactics | Accounts | Devices | Tags |` — `Sev` column shows the incident severity (Critical/High/Medium/Low). Unassigned shows `⚠️ Unassigned`. `Age` uses relative time from `AgeDisplay` (e.g., "3m ago", "2h ago", "1d ago"). `Accounts`, `Devices`, and `Tags` are entity/label arrays (max 5 each) — render inline as comma-separated values. When `TotalAll > 10`, prepend text: "**Showing 10 of {TotalAll} open incidents ({TotalHighCritical} High/Critical)** (sorted by severity, then newest, most complex first)". When `TotalAll <= 10`, omit the note. When `TotalHighCritical == 0`, prepend: "**No High/Critical incidents — showing top Medium/Low from {TotalAll} open**".
-
-**Q2 closed summary:** Classification breakdown table + severity + MITRE tactics/techniques from TP closures. Always render even when Q1 is ✅.
-
-**Zero results format:** `✅ No <type> detected in the last <N>d. Checked: <table> (0 matches)`
-
-**❓ No Data verdict:** Assigned when a query returns a table resolution error (table doesn't exist in workspace) or the query times out. Report the error message and the table that failed. Treat as an investigation gap — the domain is unmonitored.
-
-**🔵 Informational verdict:** Used by Q2 (0 closed incidents) and Q6 (DriftScore < 80, contracting activity). Maps to a neutral row in the Dashboard Summary — no action needed but context is included.
-
-**Markdown file extras:** Full data tables (no row limits), full command-line samples, full CVE lists.
-
----
-
-## Markdown File Report Template
-
-**This template is used when the user selects `💾 Save full investigation report` in Phase 4.** It produces a single markdown file that weaves together the initial Threat Pulse scan AND all subsequent drill-down investigations into a cohesive narrative.
-
-**Source data:** Original pulse query results (from context) + `/memories/session/threat-pulse-drilldowns.md` (accumulated drill-down findings). If context was compacted and drill-down details are lost, the session memory file is the authoritative source for drill-down findings.
-
-### File Structure
+### Structure
 
 ```markdown
-# 🔍 Threat Pulse — Full Investigation Report
+# 🔍 Threat Pulse — <Workspace> | <Date>
 **Workspace:** <name> (`<id>`)  
 **Scan Date:** <YYYY-MM-DD HH:MM UTC>  
-**Report Generated:** <YYYY-MM-DD HH:MM UTC>  
-**Scan Duration:** <N>min | **Queries:** 12 | **Drill-Downs:** <N>  
-
----
+**Scan Duration:** <N>min | **Queries:** 12 | **Drill-Downs:** <N>  (file mode only)
 
 ## Executive Summary
-
-<2-4 sentence narrative synthesizing the OVERALL investigation — pulse findings + all drill-down discoveries. 
-Highlight the most critical finding, whether it came from the initial scan or a drill-down.
-State the final risk posture incorporating all evidence gathered.>
+<2–4 sentences synthesizing pulse + drill-down findings. State final risk posture incorporating all evidence.>
 
 ## Dashboard Summary
-
-<Same 12-row verdict table as inline report — Q1, Q2, Q3, Q4-Q12>
+<12-row table (Q1, Q2, Q3, Q4–Q12) — columns: #, Domain, Status (verdict emoji), Key Finding (1-line).>
 
 ## Detailed Findings
-
-<Same per-query sections as inline report — every query gets a section>
+<One section per query — EVERY query gets a section (no skipping). Q2 closed summary always renders after Q1 even when Q1 is ✅.>
 
 ## Cross-Query Correlations
+<Table per Post-Processing rules, or `✅ No correlations detected`.>
 
-<Same as inline report — correlations from the 12 pulse queries>
-
-## Drill-Down Investigation Results
-
-<One subsection per drill-down, in execution order. NOT raw dumps — structured summaries 
-that reference back to the triggering pulse query and forward to other drill-downs.>
-
-### 1. <Drill-Down Title> — <Skill Name>
-
-**Triggered by:** Q<N> — <original finding from pulse>  
-**Entity:** <target>  
-**Lookback:** <timerange, note if expanded beyond 7d>  
-**Risk Assessment:** <emoji> <level>
-
-**Key Findings:**
-- <Most important finding — specific, evidence-cited>
-- <Second finding>
-- ...(prioritized, max 8)
-
-**Evidence Summary:**
-<1-2 paragraph narrative of what was discovered, with specific numbers and identifiers.
-Link back to pulse queries where findings corroborate or expand on initial data.>
-
-**Recommendations:**
-1. <Action item from this drill-down>
-2. ...
-
----
-
-### 2. <Next Drill-Down Title> — <Skill Name>
-...(same structure)
-
-## Cross-Investigation Correlation
-
-<This section is the KEY differentiator from individual reports. Synthesize connections 
-discovered ACROSS drill-downs — patterns that only become visible when looking at the 
-full investigation as a whole.>
-
-| Connection | Evidence | Drill-Downs | Implication |
-|-----------|----------|-------------|-------------|
-| <pattern> | <specific data points from 2+ investigations> | #1 + #3 | <what this means> |
-
-<Narrative paragraph explaining the most significant cross-investigation insight.
-Example: "The device investigation (#1) revealed 31 inbound RDP connections from 15 unique IPs, 
-while the IoC investigation (#3) confirmed IP 20.114.11.113 as an automated brute-force source. 
-The exposure investigation (#2) showed the device has 102 unpatched CVEs including critical OpenSSL 
-vulnerabilities in Azure extensions, meaning a successful RDP compromise could leverage these 
-for lateral movement.">
-
-If no cross-investigation connections exist: `✅ No cross-investigation correlations identified — each finding is independent.`
-
-## Consolidated Recommendations
-
-<Merge and deduplicate recommendations from ALL sources — pulse + drill-downs.
-Prioritize by risk level and actionability. Group by theme (e.g., Identity, Endpoint, Exposure).>
-
-| Priority | Recommendation | Source | Risk |
-|----------|---------------|--------|------|
-| 🔴 1 | <action> | Q<N> + Drill-Down #<N> | <level> |
-| 🟠 2 | <action> | Drill-Down #<N> | <level> |
-| ... | ... | ... | ... |
+## 🎯 Recommended Actions
+<Prioritized table: action, trigger query, drill-down skill.>
 
 ## 📂 Recommended Query Files
+<Per Report Output Block procedure. For 🟡-only verdicts use "📂 Proactive Hunting Suggestions" header. Omit when all ✅.>
 
-<Same as inline report — manifest-driven query file recommendations>
+## Drill-Down Investigation Results       (file mode, when drill-downs executed)
+### 1. <Title> — <Skill Name>
+**Triggered by:** Q<N> — <finding>  
+**Entity:** <target> | **Lookback:** <timerange> | **Risk:** <emoji> <level>
 
-## Appendix: Investigation Timeline
+**Key Findings:** <max 8 evidence-cited bullets>
 
+**Evidence Summary:** <1–2 paragraph narrative with specific numbers/identifiers. Back-reference pulse queries.>
+
+**Recommendations:** <numbered actions>
+
+### 2. <Next Title> — <Skill Name>
+...
+
+## Cross-Investigation Correlation        (file mode, when drill-downs executed)
+| Connection | Evidence | Drill-Downs | Implication |
+|-----------|----------|-------------|-------------|
+<Patterns only visible across multiple investigations. If none: `✅ No cross-investigation correlations identified — each finding is independent.`>
+
+## Consolidated Recommendations           (file mode)
+| Priority | Recommendation | Source | Risk |
+<Deduplicated across pulse + drill-downs. If same action appears in both, cite both sources on one row.>
+
+## Appendix: Investigation Timeline       (file mode)
 | Time | Action | Key Result |
-|------|--------|-----------|
-| <HH:MM> | Threat Pulse scan started | 12 queries across 7 domains |
-| <HH:MM> | Scan complete | <N> 🔴, <N> 🟠, <N> 🟡, <N> ✅ |
-| <HH:MM> | Drill-Down #1: <title> | <1-line result> |
-| ... | ... | ... |
-| <HH:MM> | Report saved | reports/threat-pulse/<filename>.md |
 ```
 
-### Template Rules
+### Column / Format Rules
 
-1. **Executive Summary is mandatory** — it must synthesize across ALL investigations, not just the pulse. If drill-downs changed the risk picture, the executive summary must reflect that.
-2. **Drill-Down sections are NOT raw dumps.** Each must be a structured summary with back-references to the triggering pulse query (`Triggered by: Q<N>`) and forward-references to related drill-downs.
-3. **Cross-Investigation Correlation is the critical section.** This is where patterns that span multiple investigations are surfaced — connections only visible from the full investigation. If no connections exist, state that explicitly.
-4. **Consolidated Recommendations deduplicates.** If the pulse and a drill-down both recommend the same action, it appears ONCE with both sources cited.
-5. **Investigation Timeline provides audit trail.** Chronological log of every action taken during the session.
-6. **Drill-down data priority:** Use session memory (`/memories/session/threat-pulse-drilldowns.md`) as the primary source for drill-down findings. Supplement with conversation context where available.
+- **Q1:** `| Incident | Sev | Title | Age | Alerts | Owner | Tactics | Accounts | Devices | Tags |` — `Sev` = incident severity, Unassigned → `⚠️ Unassigned`, `Age` uses relative `AgeDisplay`, entity/tag columns render max 5 comma-separated.
+  - When `TotalAll > 10`: prepend `**Showing 10 of {TotalAll} open incidents ({TotalHighCritical} High/Critical)** (sorted by severity, then newest, most complex first)`
+  - When `TotalHighCritical == 0`: prepend `**No High/Critical incidents — showing top Medium/Low from {TotalAll} open**`
+- **Q1 incidents** must include `[#<id>](https://security.microsoft.com/incidents/<ProviderIncidentId>?tid=<tenant_id>)` links.
+- **Q2:** Classification breakdown + severity + MITRE tactics/techniques from TP closures. Always render even when Q1 is ✅.
 
-### Quality Checklist (Combined Report)
+### Rules
 
-- [ ] Executive Summary references findings from both pulse AND drill-downs
-- [ ] Every drill-down has a structured subsection (not raw output)
-- [ ] Each drill-down subsection has `Triggered by: Q<N>` back-reference
-- [ ] Cross-Investigation Correlation section exists (either with connections or explicit "none found")
-- [ ] Consolidated Recommendations are deduplicated across all sources
-- [ ] Investigation Timeline is chronologically accurate
-- [ ] No fabricated data — all findings cite specific evidence
+| Rule | Status |
+|------|--------|
+| Executive Summary synthesizes across pulse AND drill-downs (when present) | ✅ **REQUIRED** |
+| Every query has a verdict row — no omissions, no skipped "clear" sections | ✅ **REQUIRED** |
+| Drill-down subsections are structured summaries, not raw dumps, with `Triggered by: Q<N>` | ✅ **REQUIRED** |
+| Cross-Investigation Correlation explicitly states "none found" if no connections exist | ✅ **REQUIRED** |
+| Consolidated Recommendations are deduplicated (same action + multiple sources → one row) | ✅ **REQUIRED** |
+| Fabricated data | ❌ **PROHIBITED** |
 
 ---
 
