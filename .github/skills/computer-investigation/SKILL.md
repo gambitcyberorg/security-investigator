@@ -376,7 +376,7 @@ Use these exact patterns with the appropriate MCP tool. Replace `<DEVICE_NAME>`,
 - **Tool:** Use the Sentinel Data Lake MCP's `query_lake` tool
 - **Parameter name:** `query`
 - **Time column:** `TimeGenerated`
-- **Use for:** Native Sentinel tables (SigninLogs, SecurityAlert, SecurityIncident, AuditLogs) AND MDE tables ingested into Sentinel (DeviceInfo, DeviceProcessEvents, DeviceNetworkEvents, etc.)
+- **Use for:** Lookbacks **>30 days** on any table (AH Graph API is capped at 30d), or when AH is blocked by the safety filter
 
 **Example invocation:**
 ```
@@ -389,8 +389,8 @@ query_lake(
 #### Defender XDR Advanced Hunting (RunAdvancedHuntingQuery tool)
 - **Tool:** Use the Sentinel Triage MCP's `RunAdvancedHuntingQuery` tool
 - **Parameter name:** `kqlQuery` (NOT `query`!)
-- **Time column:** `Timestamp`
-- **Use for:** TVM tables (DeviceTvmSoftwareInventory, DeviceTvmSoftwareVulnerabilities) that are NOT ingested into Sentinel Data Lake
+- **Time column:** `Timestamp` for XDR-native tables (`Device*`, `Email*`, etc.); `TimeGenerated` for LA/Sentinel tables (`SigninLogs`, `SecurityAlert`, etc.) — even in AH
+- **Use for:** **Default choice for all ≤30d queries** (free for Analytics-tier tables). Required for TVM tables (`DeviceTvmSoftwareInventory`, `DeviceTvmSoftwareVulnerabilities`) which don't exist in Data Lake.
 
 **Example invocation:**
 ```
@@ -401,19 +401,18 @@ RunAdvancedHuntingQuery(
 
 #### Tool Selection Guide
 
-| Table Type | Primary Tool | Time Column | Notes |
-|------------|--------------|-------------|-------|
-| SigninLogs, AuditLogs | Sentinel Data Lake | TimeGenerated | Native Sentinel tables |
-| SecurityAlert, SecurityIncident | Sentinel Data Lake | TimeGenerated | Native Sentinel tables |
-| DeviceInfo, DeviceProcessEvents | Sentinel Data Lake | TimeGenerated | MDE tables in Sentinel |
-| DeviceNetworkEvents, DeviceFileEvents | Sentinel Data Lake | TimeGenerated | MDE tables in Sentinel |
-| DeviceLogonEvents, DeviceRegistryEvents | Sentinel Data Lake | TimeGenerated | MDE tables in Sentinel |
-| **DeviceTvmSoftwareInventory** | **Advanced Hunting** | Timestamp | Snapshot table, NOT in Sentinel |
-| **DeviceTvmSoftwareVulnerabilities** | **Advanced Hunting** | Timestamp | Snapshot table, NOT in Sentinel |
+**Follow the global Tool Selection Rule in `.github/copilot-instructions.md` (Data Lake vs Advanced Hunting).** This skill does NOT override the global default — use **Advanced Hunting first** for ≤30d lookbacks (free for Analytics-tier tables), and fall back to Data Lake only for >30d windows or when AH is blocked by the safety filter.
 
-**Schema Differences:**
-- Some MDE columns (e.g., `SentBytes`, `ReceivedBytes` in DeviceNetworkEvents) may not be available in Sentinel Data Lake
-- Always test queries against the target tool's schema
+| Table | Tool (lookback ≤30d) | Tool (lookback >30d) | Time Column |
+|-------|----------------------|----------------------|-------------|
+| `Device*` (DeviceInfo, DeviceProcessEvents, DeviceNetworkEvents, DeviceFileEvents, DeviceLogonEvents, DeviceRegistryEvents) | **Advanced Hunting** (free) | Data Lake | AH: `Timestamp` / DL: `TimeGenerated` |
+| `SecurityAlert`, `SecurityIncident` | **Advanced Hunting** | Data Lake | `TimeGenerated` (both tools) |
+| `SigninLogs`, `AuditLogs`, `AADNonInteractiveUserSignInLogs` | **Advanced Hunting** | Data Lake | `TimeGenerated` (both tools) |
+| **`DeviceTvmSoftwareInventory`, `DeviceTvmSoftwareVulnerabilities`** | **Advanced Hunting only** | **Advanced Hunting only** | `Timestamp` (snapshot, no time filter needed) |
+
+**When adapting the sample queries below:** they are written with `TimeGenerated` for Data Lake compatibility. For Advanced Hunting on `Device*` tables, swap `TimeGenerated` → `Timestamp`. For `SecurityAlert`/`SecurityIncident`/`SigninLogs` in AH, keep `TimeGenerated` (LA/Sentinel tables retain their column name in AH).
+
+**Schema differences:** Some MDE columns (e.g., `SentBytes`, `ReceivedBytes` in `DeviceNetworkEvents`) may not be available in Data Lake. If a column fails in one tool, try the other.
 
 ---
 

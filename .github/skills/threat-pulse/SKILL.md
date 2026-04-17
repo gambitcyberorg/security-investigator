@@ -1,6 +1,6 @@
 ---
 name: threat-pulse
-description: 'Recommended starting point for new users and daily SOC operations. Quick 15-minute security posture scan across 7 domains: active incidents, identity (human + NonHuman), endpoint, email threats, admin & cloud ops, and exposure. 12 queries executed in parallel batches, producing a prioritized Threat Pulse Dashboard with color-coded verdicts (🔴 Escalate / 🟠 Investigate / 🟡 Monitor / ✅ Clear) and drill-down recommendations pointing to specialized skills. Trigger on getting-started questions like "what can you do", "where do I start", "help me investigate". Supports inline chat and markdown file output'
+description: 'Recommended starting point for new users and daily SOC operations. 15-minute broad security scan across 7 domains (incidents, identity, NHI, endpoint, email, admin/cloud, exposure) producing a Threat Pulse Dashboard with drill-down recommendations to specialized skills. Trigger on getting-started questions like "where do I start", "what can you do", "help me investigate".'
 ---
 
 # Threat Pulse — Instructions
@@ -23,26 +23,7 @@ The Threat Pulse skill is a rapid, broad-spectrum security scan designed for the
 
 **Data sources:** `SecurityIncident`, `SecurityAlert`, `IdentityInfo`, `AADUserRiskEvents`, `EntraIdSignInEvents`, `DeviceProcessEvents`, `DeviceLogonEvents`, `ExposureGraphNodes`, `AADServicePrincipalSignInLogs`, `EmailEvents`, `CloudAppEvents`, `AuditLogs`, `DeviceTvmSoftwareVulnerabilities`, `DeviceTvmSoftwareVulnerabilitiesKB`
 
-### 🔴 URL Registry
-
-**MANDATORY:** Copy URLs verbatim. NEVER construct or paraphrase.
-
-| Label | URL |
-|-------|-----|
-| `XDR_INCIDENT_BASE` | `https://security.microsoft.com/incidents/{ProviderIncidentId}?tid=<tenant_id>` |
-| `DOCS_SECURITY_INCIDENT` | `https://learn.microsoft.com/en-us/azure/sentinel/data-source-schema-reference#securityincident` |
-| `DOCS_ADVANCED_HUNTING` | `https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-overview` |
-| `DOCS_IDENTITY_PROTECTION` | `https://learn.microsoft.com/en-us/entra/id-protection/overview-identity-protection` |
-| `DOCS_EXPOSURE_MANAGEMENT` | `https://learn.microsoft.com/en-us/security-exposure-management/query-enterprise-exposure-graph` |
-| `DOCS_TVM` | `https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-devicetvmsoftwarevulnerabilities-table` |
-| `DOCS_EMAIL_EVENTS` | `https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-emailevents-table` |
-| `DOCS_CLOUD_APP_EVENTS` | `https://learn.microsoft.com/en-us/defender-xdr/advanced-hunting-cloudappevents-table` |
-| `XDR_NHI_INVENTORY` | `https://security.microsoft.com/identity-inventory?tab=NonHumanIdentities&tid=<tenant_id>` |
-| `DOCS_NHI_INVESTIGATION` | `https://learn.microsoft.com/en-us/defender-xdr/investigate-non-human-identities` |
-
-Incidents: `XDR_INCIDENT_BASE` + `ProviderIncidentId` + `?tid=<tenant_id>`.
-
-Append `tid=<tenant_id>` (from `config.json`) to ALL `security.microsoft.com` URLs — use `?tid=` or `&tid=` depending on existing query params. Omit if `tenant_id` is not configured. For KQL `strcat()` URLs, substitute the value at query time.
+**Portal URL patterns** are defined in the [Defender XDR Portal Links](#defender-xdr-portal-links--all-entity-types) table in the Take Action section. Append `tid=<tenant_id>` (from `config.json`) to ALL `security.microsoft.com` URLs — use `?tid=` or `&tid=` depending on existing query params. Omit if `tenant_id` is not configured.
 
 ---
 
@@ -58,7 +39,8 @@ Append `tid=<tenant_id>` (from `config.json`) to ALL `security.microsoft.com` UR
 8. **[Report Template](#report-template)** — Dashboard format
 9. **[Markdown File Report Template](#markdown-file-report-template)** — Full report structure
 10. **[Known Pitfalls](#known-pitfalls)**
-11. **[SVG Dashboard Generation](#svg-dashboard-generation)**
+11. **[Quality Checklist](#quality-checklist)**
+12. **[SVG Dashboard Generation](#svg-dashboard-generation)**
 
 ---
 
@@ -162,9 +144,7 @@ Estimated time: ~2–4 minutes
 
 **After rendering the report, present the user with a selectable list of follow-up actions — skill investigations, query file hunts, and IOC lookups.** Runs when at least one 🔴, 🟠, or 🟡 verdict exists (skip only when ALL verdicts are ✅).
 
-**This is a loop, not a one-shot.** After each action completes, re-present the selection list with the prompt pool updated.
-
-**🟡 Monitor-only environments:** When the highest verdict is 🟡, the prompt pool emphasizes broader posture/assessment skills rather than entity-specific deep-dives. This gives smaller environments actionable next steps even when no finding crosses the escalation threshold.
+**This is a loop, not a one-shot.** After each action completes, re-present the selection list with the prompt pool updated. Tier depth (🔴/🟠 vs 🟡-only vs all ✅) follows Rule 8.
 
 **Prompt types (three categories, one unified list):**
 
@@ -210,16 +190,7 @@ Estimated time: ~2–4 minutes
 | Q11–Q12 | Device in findings | `computer-investigation` | `Investigate device <hostname>` |
 | Q12 | CVE with fleet impact | `exposure-investigation` | `Run vulnerability report for <CVE>` |
 
-#### ⛔ MANDATORY: 30d Drill-Down Lookback
-
-ALL drill-down queries use **30d for AH** and **90d for Data Lake** — no conditional checks needed. Rationale:
-
-- Entity-scoped queries (filtered by UPN, IP, or device) scan negligible data regardless of lookback window
-- AH Graph API caps at 30d anyway — requesting 30d costs nothing extra
-- Attacks routinely predate the pulse window (e.g., the Cameron V AiTM chain started 14 days before admin confirmation)
-- The previous context-aware conditional logic was error-prone — LLMs frequently defaulted to 7d and missed critical evidence
-
-For query file prompts, substitute `ago(7d)` with `ago(30d)`. For Data Lake queries, use `ago(90d)`.
+> **Drill-down lookback** — Per Rule 9, substitute `ago(7d)` → `ago(30d)` (AH) or `ago(90d)` (Data Lake) in all drill-down queries.
 
 **Procedure:**
 1. Build the **initial prompt pool** by combining:
@@ -228,23 +199,27 @@ For query file prompts, substitute `ago(7d)` with `ago(30d)`. For Data Lake quer
    - IOC prompts: any suspicious IPs/domains from non-✅ findings not already covered by a skill prompt
    - Deduplicate: if a skill prompt and IOC prompt target the same entity, keep only the skill prompt
    - **🔴 NEVER merge a skill prompt (🔍) with a query file prompt (📄) into a single option.** They are different action types with different execution paths.
+   - **⛔ Persist the pool.** Before calling `vscode_askQuestions`, write the final pool (atomic options, in order) to `/memories/session/threat-pulse-drilldowns.md` under a `## Active Prompt Pool` block at the top of the file. Create the file if missing. This block is the source of truth for subsequent iterations — conversation history is not.
 2. **⛔ VALIDATION GATE — before building options, verify each option is atomic:**
    - Count the action icons (🔍, 📄, 🎯) in each option's Label. If a Label contains **more than one icon**, it is bundled — **split it into separate options immediately**.
    - Count the skill/query file references (→ arrows) in each option. If an option references **more than one skill or query file**, it is bundled — split it.
    - Each Label MUST start with exactly ONE icon and describe exactly ONE action targeting ONE entity or ONE query file. No commas separating multiple actions. No multiple `→` targets.
 
-   Present the pool using the interactive question tool:
-   - **Header:** `Follow-Up Investigation`
-   - **Question:** `Select an action to launch (or skip):`
-   - **Options:** One per prompt — each option is exactly ONE atomic action (one skill + one entity, or one query file + one hunt). Cross-query correlation context goes in the Description, never in the Label.
-     - **Label format:** `<ONE icon> <ONE action>` — e.g., `🔍 Investigate user jsmith@contoso.com`, `📄 Hunt delivered phishing emails`
-     - **Description format:** `Q<N>: <finding summary> → <skill or query file>`
-     - **Allowed emojis:** `🔍` `📄` `🎯` `💾` `🆕` `🔄` only. Verdict emojis (🔴🟠🟡🟢✅) render as `��` in VS Code Quick Pick — use plain text like `[Escalate]` instead.
-     - One icon per Label, one action per option. If tempted to add a comma or second icon, split into two options.
-   - **Label:** `💾 Save full investigation report` / **Description:** `Save the complete Threat Pulse session (scan + all drill-downs) as a markdown file`
-   - **Label:** `🔄 Refresh recommendations` / **Description:** `Regenerate the prompt pool based on all findings so far (pulse + drill-downs)`
-   - **Label:** `Skip` / **Description:** `No follow-up — investigation complete` *(always last)*
-   - **multiSelect:** `true`
+   Call `vscode_askQuestions` using the **Quick Pick Call Contract** below. Apply the contract **identically on every iteration** — initial and all loop-backs.
+
+   ### Quick Pick Call Contract
+
+   - `header`: `Follow-Up Investigation`
+   - `question`: `Select one or more actions to launch (or skip):`
+   - `multiSelect`: `true` *(required every iteration — omitting this is the #1 loop-degradation bug)*
+   - `options`: entity prompts in pool order, then 💾 / 🔄 / Skip appended as the **last three array elements** (in that order, every iteration — including after 🔄 Refresh). 🆕 prompts prepend to the entity portion only; they never push standing options up.
+     1. `💾 Save full investigation report` — *Save the complete Threat Pulse session (scan + all drill-downs) as a markdown file*
+     2. `🔄 Refresh recommendations` — *Regenerate the prompt pool based on all findings so far (pulse + drill-downs)*
+     3. `Skip` — *No follow-up — investigation complete* *(always last)*
+
+   Entity prompt format: `<ONE icon> <ONE action>` / Description: `Q<N>: <finding summary> → <skill or query file>`. Allowed icons: `🔍 📄 🎯 💾 🆕 🔄`. Once a report is saved, drop only 💾 from subsequent iterations — 🔄 and Skip remain.
+
+   **🔴 NO PRE-SELECTION — applies to EVERY option, including the first.** Never set `recommended: true` on ANY option — not the first item, not the "most severe" item, not any standing option (💾/🔄/Skip). All items MUST start unchecked. The user chooses what to select. Pre-checking the first item (even unintentionally via `recommended: true` or any other mechanism) is a loop-degradation bug.
 3. If user selects **Skip** (alone) or pool is empty: end skill execution. Ignore any freeform text if Skip is selected.
 4. **Freeform input routing** — If user types freeform text instead of (or alongside) selecting options, route by matching intent to validated sources. Do NOT write ad-hoc KQL — find the right skill or query file first. Classified actions feed into step 7 alongside any selected options.
    1. **Skill match** — Check the request against copilot-instructions.md Available Skills trigger keywords. "Check vulnerabilities on that device" → `exposure-investigation` or `computer-investigation`. Route as 🔍 — the `read_file` gate in step 7 applies.
@@ -288,13 +263,19 @@ For query file prompts, substitute `ago(7d)` with `ago(30d)`. For Data Lake quer
         This ensures drill-down insights survive context compaction and are available when the user requests `💾 Save full investigation report`.
    - Remove all completed prompts from the pool
    - **⛔ MANDATORY: New Evidence Scan.** Before returning to step 2, review the drill-down results for entities (IPs, users, devices, domains, hashes, CVEs) or MITRE techniques that were **not present in any prior query result or drill-down**. For each new item, assess whether it warrants follow-up — not every new entity is actionable. Add `🆕`-tagged prompts only for items that represent a **meaningful investigative lead** (e.g., a new attacker IP with high abuse score, a critical CVE on an exposed device, a previously unknown compromised account). Prepend `🆕` prompts above existing pool items. If nothing warrants follow-up, proceed — but note: "No actionable new evidence from this drill-down."
-   - **Return to step 2 — call the interactive question tool again.** Every loop iteration MUST use `vscode_askQuestions` to present the updated pool as a selectable list. Do NOT render a markdown table/numbered list as a substitute.
+   - **⛔ MANDATORY: Check the manifest before ad-hoc KQL.** For each 🆕 item, consult `.github/manifests/discovery-manifest.yaml` — match by `domains`, `mitre`, or `title` keywords. Only fall back to ad-hoc KQL if nothing matches — and note that in the Description. Validated sources are schema-verified; ad-hoc hunts routinely hit documented column/table pitfalls.
+   - **⛔ Reload pool from session memory, then mutate.** Before returning to step 2: `memory view /memories/session/threat-pulse-drilldowns.md` → take the `## Active Prompt Pool` block verbatim → remove completed prompts → prepend 🆕 prompts → write back via `memory str_replace`. Never reconstruct the pool from findings or conversation history — that silently drops unselected prompts.
+   - **Return to step 2 — call `vscode_askQuestions` again with the full [Quick Pick Call Contract](#-quick-pick-call-contract--apply-on-every-iteration).** `multiSelect: true` and all three standing options (💾 / 🔄 / Skip) MUST be present every iteration — they are not one-shot. Do NOT render a markdown table/numbered list as a substitute. **Updated pool = prior pool − completed prompts + prepended 🆕 prompts.** Untouched prompts carry forward verbatim (same Labels, same Descriptions). Full rebuild is reserved for `🔄 Refresh recommendations`.
 
 **Prompt pool rules:**
 - Completed prompts are removed — never re-offered
 - New evidence prompts are prepended (freshest leads first), tagged `🆕`
+- Untouched prompts carry forward verbatim between iterations — do NOT reword, re-rank, or hand-pick a subset (full rebuild is reserved for `🔄 Refresh recommendations`)
+- **🔴 PROHIBITED:** Presenting a pool to the user that was not just loaded from `/memories/session/threat-pulse-drilldowns.md` (except the very first iteration, which writes to it). Rebuilding from findings drops prompts.
+- **🔴 PROHIBITED:** Using verdict emojis (🔴🟠🟡🟢✅) in Quick Pick Labels — they render as `��` in VS Code. Use plain text like `[Escalate]` or allowed icons (🔍 📄 🎯 💾 🆕 🔄) instead.
 - Loop ends when user selects Skip or pool empties (`✅ All follow-up actions completed.`)
 - **🔴 PROHIBITED:** Rendering the prompt pool as a markdown table, numbered list, or plain text instead of calling `vscode_askQuestions`. Every iteration — including after the first follow-up completes — MUST use the interactive question tool so options are clickable. This is the #1 loop-breaking mistake.
+- **🔴 PROHIBITED: Never set `recommended: true` on any option — including the first item.** Pre-checking imposes LLM judgment on user priorities. ALL options must render unchecked; the user chooses. Convey severity via Label emoji prefix (`🔴`/`🟠`/`🟡`), not pre-selection.
 - **🔴 PROHIBITED:** Returning to step 2 after a drill-down without executing the New Evidence Scan (step 7, "New Evidence Scan" bullet). Skipping this scan is the #1 reason drill-down leads go uninvestigated — new IPs, CVEs, and devices discovered during drill-downs silently disappear from the pool.
 - **🔴 ATOMIC OPTIONS — ONE action per selectable item.** Each option Label MUST contain exactly ONE icon (🔍, 📄, or 🎯) and map to exactly ONE executable action: one skill + one entity, OR one query file + one hunt prompt. When cross-query correlations link multiple findings (e.g., Q3+Q9 correlating a user with both risky identity and inbox rule manipulation), generate **separate options** for each distinct action — do NOT bundle them into a single option. Note the correlation in the **Description** field to preserve context, but keep the Label and action singular.
 
@@ -548,13 +529,12 @@ DeviceNetworkEvents
 | Take Action query missing a required column | ❌ **PROHIBITED** |
 | Email Take Action query using `project` (strips columns needed by portal actions) | ❌ **PROHIBITED** |
 | `🎬 Take Action` heading without the AI-generated content warning immediately below | ❌ **PROHIBITED** |
-| AH query in Take Action without BOTH a ` ```kql ` code block AND a deep link | ❌ **PROHIBITED** |
-| Manually base64-encoding KQL for AH deep links (wrong encoding — use `kql_to_ah_url.py`) | ❌ **PROHIBITED** |
-| Using double-quoted here-strings (`@"..."@`) when writing KQL to temp files | ❌ **PROHIBITED** |
+| AH query in Take Action without BOTH a ` ```kql ` code block AND a plain `Run in Advanced Hunting` portal link | ❌ **PROHIBITED** |
+| Generating gzip/base64-encoded AH deep links via `kql_to_ah_url.py` for output | ❌ **PROHIBITED** |
 | Single entity: direct portal link + PowerShell commands | ✅ **REQUIRED** |
 | Bulk entities (2+): AH query with Take actions, values as clickable columns | ✅ **REQUIRED** |
 | Every `🎬 Take Action` heading followed by: `> ⚠️ **AI-generated content may be incorrect. Always review Take Action queries and portal links for accuracy before executing remediation actions.**` | ✅ **REQUIRED** |
-| AH deep links generated via `python scripts/kql_to_ah_url.py --md --file temp/q.kql` with single-quoted here-strings | ✅ **REQUIRED** |
+| AH Take Action queries include a plain `[Run in Advanced Hunting](https://security.microsoft.com/v2/advanced-hunting?tid=<tenant_id>)` link below the code block (no encoded query) | ✅ **REQUIRED** |
 
 ---
 
@@ -1530,8 +1510,6 @@ Prioritize by risk level and actionability. Group by theme (e.g., Identity, Endp
 | Q6 drift scores | Computed in-query — do NOT recompute LLM-side |
 | Q9 drill-down: CloudAppEvents identity filtering | `AccountId` and `AccountObjectId` are **Entra ObjectId GUIDs**, NOT UPNs. Filtering by UPN returns 0 results silently. Use `AccountDisplayName` for display-name matching, or resolve UPN→ObjectId via Graph API first. NEVER use `tostring(RawEventData) has "UPN"` — it causes query cancellation on this high-volume table |
 | Q9: `RESTSystem` false positives | Exchange Online first-party backend services use `Client=RESTSystem` in `ClientInfoString` and appear as **AppId GUIDs** in `AccountDisplayName`. These are NOT user/app API access — they are system-level mail flow, compliance scanning, or connector ingestion. Q9 filters these out; if investigating Q9 results and see GUID actors with `RESTSystem`, they are benign Microsoft internal operations |
-| **🔍 Skill drill-down: ad-hoc KQL instead of loading SKILL.md** | **#1 drill-down failure mode.** Step 7 requires `read_file` of the child SKILL.md BEFORE writing any query. If no `read_file` call on a SKILL.md preceded your KQL in the current drill-down, you are hallucinating schema — stop and load the file |
-| **🔍 Skill drill-down: loaded SKILL.md but rewrote queries** | **#2 failure mode.** Use SKILL.md queries **verbatim** (entity substitution only). Adding/changing columns or restructuring = schema hallucination with extra steps |
 | **Drill-down query error → silent skip** | **⛔ NEVER skip.** On `SemanticError`/`Failed to resolve`: diagnose → fix → re-execute → present corrected results. Partial results with silently omitted failures are **PROHIBITED** |
 
 > **Schema pitfalls** (column names, dynamic fields, `parse_json` patterns) are covered in `copilot-instructions.md` Known Table Pitfalls. Refer there for `SecurityAlert.Status`, `ExposureGraphNodes.NodeProperties`, timestamp columns, and `AuditLogs.InitiatedBy`.

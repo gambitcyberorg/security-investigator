@@ -167,7 +167,7 @@ Device process drift supports **configurable time windows** unlike sign-in drift
 | "process drift last 30 days" | Days 8–30 | Days 1–7 |
 | No time specified | Last 6 days | Last 24 hours |
 
-**Note:** `DeviceProcessEvents` in Sentinel Data Lake has 90-day retention, but in Advanced Hunting only 30 days. For lookbacks > 30 days, use Sentinel Data Lake (`query_lake` with `TimeGenerated`).
+**Note:** Follow the global **Tool Selection Rule** in `.github/copilot-instructions.md`. For lookbacks **≤ 30 days**, use `RunAdvancedHuntingQuery` (free on Analytics-tier `DeviceProcessEvents`; swap `TimeGenerated` → `Timestamp`). For lookbacks **> 30 days** (AH Graph API cap), use `mcp_sentinel-data_query_lake` with `TimeGenerated`. Sample queries below are written with `TimeGenerated`; adapt the column name when running in Advanced Hunting.
 
 ---
 
@@ -870,8 +870,8 @@ Render a single markdown table summarizing all queries executed. **Do NOT includ
 **Solution:** In the fleet daily trend (Query 14), verify that the most recent day has comparable event counts to previous days. If the last day shows significantly fewer events across ALL devices, note: "⚠️ Data Lake ingestion boundary detected — recent window may be incomplete." Adjust the recent window start time if needed.
 
 ### Advanced Hunting Fallback
-**Problem:** `DeviceProcessEvents` may fail in Advanced Hunting (`RunAdvancedHuntingQuery`) due to query complexity, timeout, or API limitations. This table is available in both Advanced Hunting and Sentinel Data Lake.
-**Solution:** Default to **Sentinel Data Lake** (`query_lake` with `TimeGenerated`) for device process drift queries. Advanced Hunting uses `Timestamp` instead of `TimeGenerated` and has a 30-day retention limit. If Data Lake also fails, check if the table is connected via the Defender XDR connector.
+**Problem:** `DeviceProcessEvents` may fail in one of the two execution tools due to query complexity, timeout, or API limitations. This table is available in both Advanced Hunting and Sentinel Data Lake.
+**Solution:** Follow the global **Tool Selection Rule** in `.github/copilot-instructions.md`: use **Advanced Hunting** (`RunAdvancedHuntingQuery` with `Timestamp`) for lookbacks ≤ 30 days, and **Sentinel Data Lake** (`query_lake` with `TimeGenerated`) for lookbacks > 30 days (e.g., 90-day baselines). If the preferred tool fails, try the other — same table, same data. If both fail, check that the Defender XDR connector is connected to the workspace.
 
 ### System/Service Accounts Dominating Volume
 **Problem:** The majority of process events on servers come from system accounts (`SYSTEM`, `LOCAL SERVICE`, `NETWORK SERVICE`, `root`). These accounts are expected and will dominate volume, process, and chain dimensions.

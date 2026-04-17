@@ -66,7 +66,7 @@ rows:
           subtitle_fields:
             - scan_timestamp               # e.g. "2026-04-10 03:29 UTC"
             - query_count                  # e.g. "13 Queries"
-            - domain_count                 # e.g. "9 Domains"
+            - domain_count                 # e.g. "7 Domains"
             - lookback_period              # e.g. "7d Lookback"
         style:
           title_align: center

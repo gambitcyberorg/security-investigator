@@ -10,9 +10,10 @@ This workspace contains a security investigation automation system. GitHub Copil
 2. **[Environment Configuration](#-environment-configuration)** - Read `config.json` for workspace/tenant details
 3. **[KQL Pre-Flight Checklist](#-kql-query-execution---pre-flight-checklist)** - Mandatory before EVERY query
 4. **[Evidence-Based Analysis](#-evidence-based-analysis---global-rule)** - Anti-hallucination guardrails
-5. **[Available Skills](#available-skills)** - Specialized investigation workflows
-6. **[Ad-Hoc Queries](#appendix-ad-hoc-query-examples)** - Quick reference patterns
-7. **[Troubleshooting](#troubleshooting-guide)** - Common issues and solutions
+5. **[Remediation Output Policy](#-remediation-output-policy---global-rule)** - Portal links only, no executable commands
+6. **[Available Skills](#available-skills)** - Specialized investigation workflows
+7. **[Ad-Hoc Queries](#appendix-ad-hoc-query-examples)** - Quick reference patterns
+8. **[Troubleshooting](#troubleshooting-guide)** - Common issues and solutions
 
 ---
 
@@ -341,6 +342,29 @@ When explaining technical concepts, use **Microsoft Learn MCP** to ground respon
 
 ---
 
+## 🔴 REMEDIATION OUTPUT POLICY - GLOBAL RULE
+
+**Applies to ALL skills and investigation outputs.**
+
+Never generate executable commands that change tenant, mailbox, user, device, or resource state. Route the admin through audited UI paths instead.
+
+### ✅ Allowed
+- Portal deep links with navigation steps (Defender XDR, Entra, EAC, Purview, Azure Portal)
+- Natural-language instructions describing what the admin should do
+- Read-only verification KQL (labeled as such) and read-only Graph `GET` calls
+
+### ❌ Prohibited
+- State-changing PowerShell (`Remove-*`, `Set-*`, `New-*`, `Disable-*`, `Revoke-*`)
+- `az` CLI write operations (`create`, `set`, `update`, `delete`)
+- Graph API write calls (`Invoke-MgGraphRequest -Method PATCH/POST/PUT/DELETE`, `curl -X POST`, etc.)
+- Any snippet the admin could paste to mutate state — even labeled "for reference" or "optional"
+
+### Exceptions
+- **Skill-defined actions** — if a skill's SKILL.md explicitly specifies state-changing commands as part of its workflow (e.g., `detection-authoring`), those are allowed within that skill's scope.
+- **User explicitly requests a command** — confirm the ask, then generate with `-WhatIf` / dry-run by default and flag the destructive operation.
+
+---
+
 ## Available Skills
 
 **BEFORE starting any investigation, detect if user request matches a specialized skill:**
@@ -366,7 +390,7 @@ When explaining technical concepts, use **Microsoft Learn MCP** to ground respon
 | 📊 Viz | **geomap-visualization** | Interactive world map for attack origins and IP geolocation | "geomap", "world map", "attack map", "show on map", "attack origins" |
 | 📊 Viz | **heatmap-visualization** | Interactive heatmap for time-based activity patterns | "heatmap", "show heatmap", "visualize patterns", "activity grid" |
 | 📊 Viz | **svg-dashboard** | SVG dashboards (KPI cards, charts, tables) from reports or ad-hoc data | "generate SVG dashboard", "create a visual dashboard", "visualize this report", "SVG from the report", "create SVG chart" |
-| 🔍 Scan | **threat-pulse** | 15-min broad security scan across 9 domains with prioritized drill-down recommendations | "threat pulse", "quick scan", "security pulse", "morning hunt", "what should I focus on", "what can you do", "where do I start", "what's going on" |
+| 🔍 Scan | **threat-pulse** | 15-min broad security scan across 7 domains with prioritized drill-down recommendations | "threat pulse", "quick scan", "security pulse", "morning hunt", "what should I focus on", "what can you do", "where do I start", "what's going on" |
 | 🔧 Tooling | **detection-authoring** | Create/deploy/manage Defender XDR custom detection rules via Graph API | "create custom detection", "deploy detection", "detection rule", "custom detection", "deploy rule", "batch deploy" |
 | 🔧 Tooling | **kql-query-authoring** | KQL query creation with schema validation and community examples | "write KQL", "create KQL query", "help with KQL", "query [table]" |
 | 🔧 Tooling | **mcp-usage-monitoring** | MCP server usage audit (Graph/Sentinel/Azure MCP telemetry analysis) | "MCP usage", "MCP server monitoring", "MCP activity", "MCP audit", "who is using MCP" |
@@ -457,7 +481,7 @@ Every SecurityIncident query MUST include `ProviderIncidentId` in the output and
 
 **If `tenant_id` is not configured** (missing, empty, or placeholder `YOUR_*`): omit `tid` entirely.
 
-This applies to: incident links, entity links (user, domain, IP, device, file hash), AH deep links (`kql_to_ah_url.py` handles this automatically). KQL `strcat()` patterns must substitute the `tenant_id` value at query time.
+This applies to: incident links, entity links (user, domain, IP, device, file hash), and AH portal links (`https://security.microsoft.com/v2/advanced-hunting?tid=<tenant_id>` — plain link, no encoded query). KQL `strcat()` patterns must substitute the `tenant_id` value at query time.
 
 
 ### 🔧 Tool Selection Rule: Data Lake vs Advanced Hunting
@@ -751,24 +775,22 @@ python enrich_ips.py --file temp/investigation_user_20251130.json
 
 ---
 
-### AH Deep Links — Clickable "Run in Portal" URLs (`kql_to_ah_url.py`)
+### AH Portal Links — "Run in Advanced Hunting"
 
 Every AH query in a `🎬 Take Action` block MUST include **both**:
-1. The KQL in a **copyable fenced code block** (` ```kql ... ``` `) — so the analyst can paste it manually if the deep link fails
-2. A **clickable deep link** immediately after the code block — for one-click convenience
+1. The KQL in a **copyable fenced code block** (` ```kql ... ``` `) — the analyst copies this to paste into the AH portal
+2. A **plain portal link** immediately after the code block: `[Run in Advanced Hunting](https://security.microsoft.com/v2/advanced-hunting?tid=<tenant_id>)` — opens the AH page scoped to the correct tenant; the analyst pastes the KQL there
 
-The deep link is a convenience shortcut, NOT a replacement for the code block. If the link breaks (encoding issues, session state, browser quirks), the analyst needs the raw KQL.
+**Tenant ID:** Read `tenant_id` from `config.json` and append `?tid=<tenant_id>` to the URL. Omit `tid` entirely if `tenant_id` is missing or a placeholder.
 
-**Tenant ID:** `kql_to_ah_url.py` automatically reads `tenant_id` from `config.json` and appends `&tid=<tenant_id>` to the AH URL. Use `--no-tid` to suppress. Use `--tid <GUID>` to override.
-
-**⚠️ PowerShell here-string pitfall:** Double-quoted here-strings (`@"..."@`) expand `$variables` and can silently corrupt KQL containing `$` (common in KQL `let` statements). **Always use single-quoted here-strings (`@'...'@`)** when writing KQL to temp files.
+**🔴 DO NOT encode KQL into the URL.** The `scripts/kql_to_ah_url.py` script still exists but is **deprecated for use in output** — encoded URLs are fragile (encoding bugs, VS Code chat rendering quirks, link-length limits). Always provide the plain portal URL + copyable code block instead.
 
 | Action | Status |
 |--------|--------|
 | AH query in Take Action without a copyable KQL code block | ❌ **PROHIBITED** |
-| AH query in Take Action without a `Run in Advanced Hunting` deep link | ❌ **PROHIBITED** |
-| Every AH query in Take Action includes BOTH a code block AND a clickable deep link | ✅ **REQUIRED** |
-| Using double-quoted here-strings (`@"..."@`) when writing KQL to temp files for deep link generation | ❌ **PROHIBITED** |
+| AH query in Take Action without a plain `Run in Advanced Hunting` portal link | ❌ **PROHIBITED** |
+| Generating gzip/base64-encoded AH deep links via `kql_to_ah_url.py` for output | ❌ **PROHIBITED** |
+| Every AH query in Take Action includes BOTH a code block AND a plain `?tid=<tenant_id>` portal link | ✅ **REQUIRED** |
 
 ---
 
