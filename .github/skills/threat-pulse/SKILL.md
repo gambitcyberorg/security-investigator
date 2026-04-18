@@ -1009,6 +1009,12 @@ EmailEvents
 **Tool:** `RunAdvancedHuntingQuery`
 
 ```kql
+// Allow-list of Microsoft platform service principals that perform automated mailbox/CA lifecycle ops.
+// These appear with empty AccountDisplayName; the real actor name lives in RawEventData.UserId.
+// Pattern: any RawEventData.UserId starting with "NT SERVICE\" is Microsoft datacenter automation
+// (e.g., MSExchangeAdminApiNetCore for tenant-onboarding/permission hygiene). Exclude from analyst
+// view to avoid false-positive "empty actor" alarms.
+let PlatformServicePrefix = @"NT SERVICE\";
 CloudAppEvents
 | where Timestamp > ago(7d)
 | where ActionType in (
@@ -1022,9 +1028,14 @@ CloudAppEvents
     // Compromise signals
     "CompromisedSignIn"
 )
+// Resolve effective actor: AccountDisplayName when present, else RawEventData.UserId
+| extend RawUserId = tostring(parse_json(tostring(RawEventData)).UserId)
+| extend EffectiveActor = iff(isnotempty(AccountDisplayName), AccountDisplayName, RawUserId)
+// Exclude Microsoft platform service principals (datacenter automation noise)
+| where not(EffectiveActor startswith PlatformServicePrefix)
 // Filter out system/automation-driven CA changes (CA agent, backup policies)
-| where not(ActionType in ("Set-ConditionalAccessPolicy", "New-ConditionalAccessPolicy") 
-            and isempty(AccountDisplayName))
+| where not(ActionType in ("Set-ConditionalAccessPolicy", "New-ConditionalAccessPolicy")
+            and isempty(EffectiveActor))
 | extend Category = case(
     ActionType in ("New-InboxRule", "Set-InboxRule", "Remove-InboxRule",
                    "Set-Mailbox", "Add-MailboxPermission", "Remove-MailboxPermission",
@@ -1037,8 +1048,8 @@ CloudAppEvents
     "Other")
 | summarize
     Count = count(),
-    UniqueActors = dcount(AccountDisplayName),
-    TopActors = make_set(AccountDisplayName, 5),
+    UniqueActors = dcount(EffectiveActor),
+    TopActors = make_set(EffectiveActor, 5),
     Actions = make_set(ActionType, 5),
     LatestTime = max(Timestamp)
     by Category
@@ -1046,6 +1057,8 @@ CloudAppEvents
 ```
 
 **Purpose:** Three-category view of cloud app activity invisible to Q10 (AuditLogs). `CompromisedSignIn` is an MCAS signal independent from Q3's Identity Protection risk events — dual-source corroboration when both fire. CA changes with empty `AccountDisplayName` are system/agent-driven and filtered out. Inbox rule, transport rule, and mailbox permission changes are the primary BEC persistence/exfil mechanisms — even when no rule has a forwarding payload, rule creation by a previously-flagged user is a strong follow-up signal.
+
+> **Actor resolution:** `AccountDisplayName` is often empty for non-interactive ops; the query falls back to `RawEventData.UserId`. Actors prefixed `NT SERVICE\` are Microsoft datacenter automation (e.g., `MSExchangeAdminApiNetCore`) and are excluded.
 
 **Verdict logic:**
 - 🔴 Escalate: `Compromised Sign-In` with 5+ users, OR `Conditional Access Change` by any human actor, OR `Exchange Admin/Rule Change` with forwarding-related rules (`New-InboxRule`, `Set-InboxRule`, `New-TransportRule`)
