@@ -167,7 +167,7 @@ The Threat Pulse skill is a rapid, broad-spectrum security scan designed for the
 | Q4 | Spray source IP | `ioc-investigation` | `Investigate IP <address>` |
 | Q4 | Spray targeting 5+ users | `identity-posture` | `Run identity posture report` |
 | Q5 | SPN with drift | `scope-drift-detection/spn` | `Analyze drift for <SPN>` |
-| Q6 | Device with DriftScore > 150 | `scope-drift-detection/device` | `Analyze device process drift for <hostname>` |
+| Q6 | Device with DriftScore > 130 | `scope-drift-detection/device` | `Analyze device process drift for <hostname>` |
 | Q6–Q7 | Device in findings | `computer-investigation` | `Investigate device <hostname>` |
 | Q8 | Phishing delivered or malware detected | `email-threat-posture` | `Run email threat posture report` |
 | Q8+Q3 | Phishing recipient appears in Q3 risky users | `authentication-tracing` | `Trace authentication chain for <UPN>` |
@@ -888,13 +888,20 @@ RC | join kind=inner BL on ServicePrincipalId
 **Tool:** `RunAdvancedHuntingQuery`
 
 ```kql
+let uptime = DeviceInfo
+| where Timestamp > ago(7d)
+| extend IsRecent = Timestamp >= ago(1d)
+| summarize
+    BaselineHours = dcountif(bin(Timestamp, 1h), not(IsRecent)),
+    RecentHours   = dcountif(bin(Timestamp, 1h), IsRecent)
+    by DeviceName;
 DeviceProcessEvents
 | where Timestamp > ago(7d)
 | where not(
     InitiatingProcessFileName in ("gc_worker", "gc_linux_service", "dsc_host")
     or (InitiatingProcessFileName == "dash" and InitiatingProcessParentFileName in ("gc_worker", "gc_linux_service"))
   )
-| extend IsRecent = Timestamp >= ago(1d)
+| extend IsRecent = Timestamp >= ago(1d), DayBucket = bin(Timestamp, 1d)
 | summarize
     BL_Events = countif(not(IsRecent)),
     RC_Events = countif(IsRecent),
@@ -905,9 +912,12 @@ DeviceProcessEvents
     BL_Chains = dcountif(strcat(InitiatingProcessFileName, "→", FileName), not(IsRecent)),
     RC_Chains = dcountif(strcat(InitiatingProcessFileName, "→", FileName), IsRecent),
     BL_Comps = dcountif(ProcessVersionInfoCompanyName, not(IsRecent)),
-    RC_Comps = dcountif(ProcessVersionInfoCompanyName, IsRecent)
+    RC_Comps = dcountif(ProcessVersionInfoCompanyName, IsRecent),
+    BaselineDays = dcountif(DayBucket, not(IsRecent))
     by DeviceName
-| where RC_Events > 0 and BL_Events > 0
+| where RC_Events > 0 and BL_Events > 0 and BaselineDays >= 4
+| join kind=inner uptime on DeviceName
+| where BaselineHours >= 48 and RecentHours >= 4
 | extend
     VolDriftRaw = round(RC_Events * 600.0 / max_of(BL_Events, 1), 0),
     VolDrift = min_of(round(RC_Events * 600.0 / max_of(BL_Events, 1), 0), 300),
@@ -918,16 +928,15 @@ DeviceProcessEvents
 | extend DriftScore = round(VolDrift * 0.30 + ProcDrift * 0.25 + ChainDrift * 0.20 + AcctDrift * 0.15 + CompDrift * 0.10, 0)
 | order by DriftScore desc
 | take 10
-| project DeviceName, DriftScore, VolDriftRaw, VolDrift, ProcDrift, AcctDrift, ChainDrift, CompDrift
+| project DeviceName, DriftScore, BaselineDays, BaselineHours, RecentHours, VolDriftRaw, VolDrift, ProcDrift, AcctDrift, ChainDrift, CompDrift
 ```
 
 **Purpose:** Returns the top 10 devices ranked by composite drift score, pre-computed in KQL. No LLM-side math required — just interpret the returned scores.
 
 **Tuning notes:**
-- **GC filter:** Excludes Azure Guest Configuration (`gc_worker`, `gc_linux_service`, `dsc_host`) and their child shell chains. Transparent on Windows (<1% impact).
-- **VolDrift cap (300%):** `VolDriftRaw` shows the true ratio; `VolDrift` is capped via `min_of()` so volume-only spikes don't dominate. When `VolDriftRaw` ≫ 300 but diversity metrics are ~100, it's infrastructure noise. When both are elevated, high-confidence anomaly.
-- **Volume (`VolDrift`):** `RC * 600 / BL` normalizes to per-day rate (100 × 6 baseline days), then caps at 300%.
-- **Dcount metrics:** `RC_Dim * 100 / BL_Dim` — compared directly (distinct counts don't scale linearly with time). 100% = normal, >100% = new values appeared.
+- **GC filter:** Excludes Azure Guest Configuration noise (Linux only; <1% impact on Windows).
+- **Uptime + baseline-days gates:** Filter intermittent endpoints whose offline baseline inflates VolDrift. Drop the `DeviceInfo` join if heartbeats aren't ingested.
+- **VolDrift cap (300%):** `VolDriftRaw` preserves the true ratio. High `VolDriftRaw` with ~100 diversity metrics = infrastructure noise; both elevated = high-confidence anomaly.
 - **Weights:** Volume 30%, Processes 25%, Chains 20%, Accounts 15%, Companies 10%.
 
 **Verdict logic:** See [Device Drift Score Interpretation](#device-drift-score-interpretation-q6) in Post-Processing for the full scale, VolDrift cap context, and fleet-uniformity rule.
@@ -1206,10 +1215,10 @@ Q6 returns pre-computed drift scores directly from KQL — **no LLM-side math is
 | DriftScore | Interpretation | Verdict |
 |------------|---------------|--------|
 | < 80 | Contracting activity (device may be idle/decommissioned) | 🔵 Informational |
-| 80–120 | Stable (fleet median range — validated across 90d in 2 environments) | ✅ Clear |
-| 120–150 | Minor behavioral expansion (2-17% of fleet weekly) | 🟡 Monitor |
-| 150–200 | Significant deviation (0-5% of fleet weekly) | 🟠 Investigate |
-| 200+ | Major anomaly (<1% of fleet weekly across 90d validation) | 🔴 Escalate |
+| 80–110 | Stable steady-state servers (fleet floor with uptime gate — was 80–120 pre-uptime-filter) | ✅ Clear |
+| 110–130 | Minor behavioral expansion | 🟡 Monitor |
+| 130–180 | Significant deviation — includes genuine intermittent-workstation drift now that uptime FPs are filtered | 🟠 Investigate |
+| 180+ | Major anomaly — multi-dimensional with confirmed uptime baseline | 🔴 Escalate |
 
 **VolDrift cap context:** `VolDriftRaw` is projected alongside the capped `VolDrift`. When interpreting results:
 - If `VolDriftRaw` ≫ 300 but ProcDrift/ChainDrift/AcctDrift are near 100: **infrastructure volume spike** (GC, patching, agent restart) — low concern despite high raw volume.
