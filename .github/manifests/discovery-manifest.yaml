@@ -4,7 +4,7 @@
 # Slim version: title, path, domains, mitre, prompt only.
 # Use --full flag to generate the verbose manifest with tables, keywords, platform, timeframe.
 
-generated: '2026-04-16T20:57:47Z'
+generated: '2026-05-01T15:22:05Z'
 valid_domains:
 - admin
 - cloud
@@ -630,6 +630,21 @@ queries:
   - TA0042
   - TA0006
   - TA0009
+- title: Email Threat Landscape Q1 2026 — TTPs & IOCs
+  path: queries/threat-intelligence/2026-04/email_threat_landscape_q1_2026.md
+  domains:
+  - email
+  mitre:
+  - T1566.001
+  - T1566.002
+  - T1598.002
+  - T1204.001
+  - T1204.002
+  - T1027.013
+  - T1027
+  - T1078
+  - TA0001
+  - TA0006
 - title: Sapphire Sleet macOS Intrusion — From Lure to Compromise
   path: queries/threat-intelligence/2026-04/sapphire_sleet_macos_intrusion.md
   domains:
